@@ -16,7 +16,7 @@ Author: James Laska
 """
 
 __version__ = "0.1"
-__name__ = "pytest_marker_jira"
+__name__ = "pytest_jira"
 
 class JiraHooks(object):
     issue_re = r"([A-Z]+-[0-9]+)"
