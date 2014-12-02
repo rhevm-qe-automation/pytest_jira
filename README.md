@@ -1,5 +1,5 @@
 # Intro
-[PyTest][pytest] plugin for JIRA integration.  This plugin currently assumes the
+A [pytest][pytest] plugin for JIRA integration.  This plugin currently assumes the
 following workflow:
 
 A JIRA issue with status in ['Closed', 'Resolved'] is assumed to be resolved.
@@ -16,12 +16,14 @@ submitting feature requests or issues to [issues][githubissues].
 ``pip install pytest_jira``
 
 ## Usage
-1. Create a jira.cfg in the root of your tests
+1. Create a `jira.cfg` in the root of your tests
 
- [DEFAULT]
- url = https://jira.atlassian.com
- username = USERNAME (or blank for no authentication)
- password = PASSWORD (or blank for no authentication)
+    ```ini
+    [DEFAULT]
+    url = https://jira.atlassian.com
+    username = USERNAME (or blank for no authentication)
+    password = PASSWORD (or blank for no authentication)
+    ```
 
 Options can be overridden with command line options.
 
