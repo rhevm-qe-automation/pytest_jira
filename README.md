@@ -1,6 +1,21 @@
 # Intro
-A [pytest][pytest] plugin for JIRA integration.  This plugin currently assumes the
-following workflow:
+A [pytest][pytest] plugin for JIRA integration.
+
+This plugin links tests with JIRA tickets. The plugin behaves similar to the [pytest-bugzilla](https://pypi.python.org/pypi/pytest-bugzilla) plugin.
+
+* If the test fails ...
+
+  * and the JIRA ticket is still **unresolved** (i.e. not fixed), the test result is **xfail** (e.g. known failure).
+  * and the JIRA ticket is **resolved** (i.e. fixed), the test result is **fail** (e.g. unexpected failure).
+
+* If the test passed ...
+
+  * and the JIRA ticket is still **unresolved** (i.e. not fixed), the test result is **xpassed** (e.g. unexpected pass).
+  * and the JIRA ticket is **resolved**, the test result is **passed** (e.g. everything works).
+
+The plugin does not close JIRA tickets, or create them. It just allows you to link tests to existing tickets.
+
+This plugin currently assumes the following workflow:
 
 A JIRA issue with status in ['Closed', 'Resolved'] is assumed to be resolved.
 All other issues are considered unresolved.
