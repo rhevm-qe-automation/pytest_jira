@@ -25,7 +25,7 @@ submitting feature requests or issues to [issues][githubissues].
 
 ## Requires
 * pytest >= 2.2.3
-* jira-python >= 0.13
+* jira >= 0.13
 
 ## Installation
 ``pip install pytest_jira``
