@@ -83,7 +83,7 @@ class JiraHooks(object):
         except:
             jira_ids = []
 
-        if call.when == 'call' and not rep.passed and jira_ids:
+        if call.when == 'call' and jira_ids:
             for issue_id in jira_ids:
                 if not self.is_issue_resolved(issue_id):
                     if call.excinfo:
