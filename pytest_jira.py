@@ -2,6 +2,7 @@ import os
 import re
 import ConfigParser
 import pytest
+import logging
 from jira.client import JIRA
 
 """
@@ -16,29 +17,36 @@ Author: James Laska
 
 __version__ = "0.1"
 __name__ = "pytest_jira"
+logger = logging.getLogger('pytest_jira')
 
 class JiraHooks(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, url, username=None, password=None):
+    def __init__(self, url, username=None, password=None, verify=True):
         self.url = url
-        self.username = username
-        self.password = password
+        self.verify = verify
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
 
         # Setup basic_auth
-        if self.username and self.password:
-            basic_auth=(self.username, self.password)
+        if username and password:
+            self.basic_auth=(username, password)
         else:
-            basic_auth=None
+            self.basic_auth=None
 
         # TODO - use requests REST API instead to drop a dependency
         # (https://confluence.atlassian.com/display/DOCSPRINT/The+Simplest+Possible+JIRA+REST+Examples)
-        self.jira = JIRA(options=dict(server=self.url),
-                         basic_auth=basic_auth)
+        try:
+            self.jira = JIRA(options=dict(server=self.url, verify=self.verify),
+                         basic_auth=self.basic_auth, validate=True, max_retries=1)
+        except Exception as ex:
+            logger.error('Unable to connect to Jira: %s', ex)
+            self.jira = None
 
+    def is_connected(self):
+        return self.jira is not None
+           
     def get_jira_issues(self, item):
         issue_pattern = re.compile(self.issue_re)
         jira_ids = []
@@ -139,6 +147,14 @@ def pytest_addoption(parser):
     if os.path.exists('jira.cfg'):
         config.read('jira.cfg')
 
+    try:
+        verify = config.getboolean('DEFAULT', 'ssl_verification')
+    except ConfigParser.NoOptionError:
+        verify = True
+    except ValueError:
+        logger.error('Wrong argument for ssl_verification!')
+        verify = True
+
     group.addoption('--jira-url',
                     action='store',
                     dest='jira_url',
@@ -157,6 +173,13 @@ def pytest_addoption(parser):
                     default=config.get('DEFAULT', 'password', None),
                     metavar='password',
                     help='JIRA password.')
+    group.addoption('--jira-verify',
+                    action='store',
+                    dest='jira_verify',
+                    default=verify,
+                    metavar='verify',
+                    help='Disable SSL verification to Jira'
+                    )
 
 def pytest_configure(config):
     """
@@ -172,12 +195,12 @@ def pytest_configure(config):
         "test will be skipped prior to execution.  See "
         "https://github.com/jlaska/pytest_jira"
     )
-
     if config.getvalue("jira") and config.getvalue('jira_url'):
         jira_plugin = JiraHooks(config.getvalue('jira_url'),
                                 config.getvalue('jira_username'),
-                                config.getvalue('jira_password'))
-        ok = config.pluginmanager.register(jira_plugin)
-        assert ok
-
-
+                                config.getvalue('jira_password'),
+                                config.getvalue('jira_verify'))
+        if jira_plugin.is_connected():
+            # if connection to jira fails, plugin won't be loaded
+            ok = config.pluginmanager.register(jira_plugin)
+            assert ok
