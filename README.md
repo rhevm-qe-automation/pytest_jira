@@ -25,7 +25,7 @@ submitting feature requests or issues to [issues][githubissues].
 
 ## Requires
 * pytest >= 2.2.3
-* jira >= 0.13
+* jira >= 0.43
 
 ## Installation
 ``pip install pytest_jira``
@@ -38,6 +38,8 @@ submitting feature requests or issues to [issues][githubissues].
     url = https://jira.atlassian.com
     username = USERNAME (or blank for no authentication)
     password = PASSWORD (or blank for no authentication)
+    # ssl_verification = True/False
+
     ```
 
 Options can be overridden with command line options.
