@@ -72,7 +72,7 @@ setup(
     py_modules=['pytest_jira'],
     entry_points = {'pytest11': ['pytest_jira = pytest_jira'],},
     zip_safe=False,
-    install_requires = ['jira>=0.13','pytest>=2.2.4'],
+    install_requires = ['jira>=0.43','pytest>=2.2.4'],
     cmdclass = {'test': PyTest,
                 'clean': CleanCommand,
                 # 'build_sphinx': BuildSphinx},

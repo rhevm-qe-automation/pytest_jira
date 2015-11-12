@@ -25,22 +25,26 @@ submitting feature requests or issues to [issues][githubissues].
 
 ## Requires
 * pytest >= 2.2.3
-* jira >= 0.13
+* jira >= 0.43
 
 ## Installation
 ``pip install pytest_jira``
 
 ## Usage
-1. Create a `jira.cfg` in the root of your tests
+1. Create a `pytest.ini` in the root of your tests
 
     ```ini
-    [DEFAULT]
-    url = https://jira.atlassian.com
-    username = USERNAME (or blank for no authentication)
-    password = PASSWORD (or blank for no authentication)
+    [pytest]
+    jira_url = https://jira.atlassian.com
+    jira_username = USERNAME (or blank for no authentication)
+    jira_password = PASSWORD (or blank for no authentication)
+    # jira_ssl_verification = True/False
+
     ```
 
 Options can be overridden with command line options.
+
+More information about ini files can be found [here](https://pytest.org/latest/customize.html#inifiles)
 
  ``py.test --help``
 
