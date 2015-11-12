@@ -1,8 +1,7 @@
-import os
 import re
-import ConfigParser
 import pytest
 import logging
+import ast
 from jira.client import JIRA
 
 """
@@ -10,7 +9,7 @@ This plugin integrates pytest with jira; allowing the tester to mark a test
 with a bug id.  The test will then be skipped unless the issue status is closed
 or resolved.
 
-You must set the url either at the command line or in jira.cfg.
+You must set the url either at the command line or in any pytest INI file.
 
 Author: James Laska
 """
@@ -19,12 +18,20 @@ __version__ = "0.1"
 __name__ = "pytest_jira"
 logger = logging.getLogger('pytest_jira')
 
+
 class JiraHooks(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, url, username=None, password=None, verify=True):
+    def __init__(
+            self, url,
+            username=None, password=None,
+            verify=True, components=None,
+            version=None
+    ):
         self.url = url
         self.verify = verify
+        self.components = components
+        self.version = version
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
@@ -127,59 +134,80 @@ class JiraHooks(object):
             if not jira_run and not self.is_issue_resolved(issue_id):
                 pytest.skip("%s/browse/%s" % (self.url, issue_id))
 
+
 def pytest_addoption(parser):
     """
     Add a options section to py.test --help for jira integration.
-    Parse configuration file, jira.cfg and / or the command line options
+    Parse configuration file and / or the command line options
     passed.
 
     :param parser: Command line options.
     """
-    group = parser.getgroup('JIRA integration')
-    group.addoption('--jira',
-                    action='store_true',
-                    default=False,
-                    dest='jira',
-                    help='Enable JIRA integration.')
+    # INI file options
+    parser.addini(
+        'jira_url',
+        'JIRA url (default: %s)' % None,
+        default=None
+    )
+    parser.addini(
+        'jira_username',
+        'JIRA username (default: %s)' % None,
+        default=None
+    )
+    parser.addini(
+        'jira_password',
+        'JIRA password.',
+        default=None
+    )
+    parser.addini(
+        'jira_ssl_verification',
+        'SSL verification (default: %s)' % True,
+        default='True'
+    )
+    parser.addini(
+        'jira_version',
+        'Used version.',
+        default=None
+    )
+    parser.addini(
+        'jira_components',
+        'Used components.',
+        type='args',
+        default=None
+    )
+    # command line options
+    parser.addoption(
+        '--jira',
+        action='store_true',
+        default=False,
+        dest='jira',
+        help='Enable JIRA integration.'
+    )
+    parser.addoption(
+        '--jira-url',
+        action='store',
+        dest='jira_url',
+        default=None,
+        metavar='jira_url',
+        help='JIRA url (default: %s)' % None
+    )
+    parser.addoption(
+        '--jira-user',
+        action='store',
+        dest='jira_username',
+        default=None,
+        metavar='jira_username',
+        help='JIRA username (default: %s)' % None
+    )
+    parser.addoption(
+        '--jira-password',
+        action='store',
+        dest='jira_password',
+        default=None,
+        metavar='jira_password',
+        help='JIRA password.'
+    )
 
-    # FIXME - Change to a credentials.yaml ?
-    config = ConfigParser.ConfigParser()
-    if os.path.exists('jira.cfg'):
-        config.read('jira.cfg')
-
-    try:
-        verify = config.getboolean('DEFAULT', 'ssl_verification')
-    except ConfigParser.NoOptionError:
-        verify = True
-    except ValueError:
-        logger.error('Wrong argument for ssl_verification!')
-        verify = True
-
-    group.addoption('--jira-url',
-                    action='store',
-                    dest='jira_url',
-                    default=config.get('DEFAULT', 'url'),
-                    metavar='url',
-                    help='JIRA url (default: %default)')
-    group.addoption('--jira-user',
-                    action='store',
-                    dest='jira_username',
-                    default=config.get('DEFAULT', 'username', None),
-                    metavar='username',
-                    help='JIRA username (default: %default)')
-    group.addoption('--jira-password',
-                    action='store',
-                    dest='jira_password',
-                    default=config.get('DEFAULT', 'password', None),
-                    metavar='password',
-                    help='JIRA password.')
-    group.addoption('--jira-verify',
-                    action='store',
-                    dest='jira_verify',
-                    default=verify,
-                    metavar='verify',
-                    help='Disable SSL verification to Jira'
-                    )
 
 def pytest_configure(config):
     """
@@ -195,12 +223,17 @@ def pytest_configure(config):
         "test will be skipped prior to execution.  See "
         "https://github.com/jlaska/pytest_jira"
     )
-    if config.getvalue("jira") and config.getvalue('jira_url'):
-        jira_plugin = JiraHooks(config.getvalue('jira_url'),
-                                config.getvalue('jira_username'),
-                                config.getvalue('jira_password'),
-                                config.getvalue('jira_verify'))
-        if jira_plugin.is_connected():
+    verify = ast.literal_eval(config.getini('jira_ssl_verification'))
+    if config.getoption('jira'):
+        jira_plugin = JiraHooks(
+            config.getoption('jira_url') or config.getini('jira_url'),
+            config.getoption('jira_username') or config.getini('jira_username'),
+            config.getoption('jira_password') or config.getini('jira_password'),
+            verify,
+            config.getini('jira_components'),
+            config.getini('jira_version')
+        )
+        if jira_plugin.jira:
             # if connection to jira fails, plugin won't be loaded
             ok = config.pluginmanager.register(jira_plugin)
             assert ok
