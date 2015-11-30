@@ -326,5 +326,5 @@ def pytest_configure(config):
         )
         if jira_plugin.is_connected():
             # if connection to jira fails, plugin won't be loaded
-            ok = config.pluginmanager.register(jira_plugin)
+            ok = config.pluginmanager.register(jira_plugin, name='jira_plugin')
             assert ok
