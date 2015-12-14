@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import ConfigParser
 import pytest
 from jira.client import JIRA
@@ -41,20 +40,28 @@ class JiraHooks(object):
                          basic_auth=basic_auth)
 
     def get_jira_issues(self, item):
+        issue_pattern = re.compile(self.issue_re)
         jira_ids = []
         # Was the jira marker used?
         if 'jira' in item.keywords:
             marker = item.keywords['jira']
             if len(marker.args) == 0:
                 raise TypeError('JIRA marker requires one, or more, arguments')
-            jira_ids = item.keywords['jira'].args
+            jira_ids.extend(item.keywords['jira'].args)
 
         # Was a jira issue referenced in the docstr?
-        elif item.function.__doc__:
-            issue_pattern = re.compile(self.issue_re)
-            jira_ids = [m.group(0) \
-                for m in issue_pattern.finditer(item.function.__doc__)]
-        return jira_ids
+        if item.function.__doc__:
+            jira_ids.extend(
+                [
+                    m.group(0)
+                    for m in issue_pattern.finditer(item.function.__doc__)
+                ]
+            )
+
+        # Filter valid issues, and return unique issues
+        return [
+            jid for jid in set(jira_ids) if issue_pattern.match(jid)
+        ]
 
     def is_issue_resolved(self, issue_id):
         '''
