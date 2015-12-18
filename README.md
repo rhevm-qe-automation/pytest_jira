@@ -33,22 +33,24 @@ submitting feature requests or issues to [issues][githubissues].
 ## Usage
 1. Create a `jira.cfg` in the root of your tests
 
-    ```ini
-    [DEFAULT]
-    url = https://jira.atlassian.com
-    username = USERNAME (or blank for no authentication)
-    password = PASSWORD (or blank for no authentication)
-    ```
+  ```ini
+  [DEFAULT]
+  url = https://jira.atlassian.com
+  username = USERNAME (or blank for no authentication)
+  password = PASSWORD (or blank for no authentication)
+  ```
 
-Options can be overridden with command line options.
+  Options can be overridden with command line options.
 
- ``py.test --help``
+  ``py.test --help``
 
 2. Mark your tests with jira marker and issue id.
- ``@pytest.mark.jira('issue_id')``
+  ``@pytest.mark.jira('issue_id')``
+
+  You can put Jira ID into doc string of test case as well.
 
 3. Run py.test with jira option to enable the plugin.
- ``py.test --jira``
+  ``py.test --jira``
 
 [pytest]: http://pytest.org/latest/
 [githubissues]: https://github.com/jlaska/pytest_jira/issues
