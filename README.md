@@ -3,15 +3,27 @@ A [pytest][pytest] plugin for JIRA integration.
 
 This plugin links tests with JIRA tickets. The plugin behaves similar to the [pytest-bugzilla](https://pypi.python.org/pypi/pytest-bugzilla) plugin.
 
-* If the test fails ...
 
-  * and the JIRA ticket is still **unresolved** (i.e. not fixed), the test result is **xfail** (e.g. known failure).
-  * and the JIRA ticket is **resolved** (i.e. fixed), the test result is **fail** (e.g. unexpected failure).
 
-* If the test passed ...
+| CONDITION | Test Passed | Test Failed |
+|---------|:---------:|:---------:|
+| | **Basic** | |
+| Run = False | skipped | skipped
+| Unresolved | xpassed | xfailed |
+| Resolved | passed | failed |
+| Not found  | passed | failed |
+| Not specified | passed | failed |
+| | **Advanced** | |
+| *Resolved:* |
+| Your version was not affected | passed | failed |
+| Your version was affected and fixed | passed | failed |
+| Your version was affected but not fixed | xpassed | xfailed |
+| *Unresolved:*|
+| Your components are affected | xpassed | xfailed |
+| Your components are affected in your version | xpassed | xfailed |
+| Your components are affected in different version | passed | failed |
+| Your components are not affected | passed | failed |
 
-  * and the JIRA ticket is still **unresolved** (i.e. not fixed), the test result is **xpassed** (e.g. unexpected pass).
-  * and the JIRA ticket is **resolved**, the test result is **passed** (e.g. everything works).
 
 The plugin does not close JIRA tickets, or create them. It just allows you to link tests to existing tickets.
 
@@ -25,24 +37,28 @@ submitting feature requests or issues to [issues][githubissues].
 
 ## Requires
 * pytest >= 2.2.3
-* jira >= 0.13
+* jira >= 0.43
 
 ## Installation
 ``pip install pytest_jira``
 
 ## Usage
-1. Create a `jira.cfg` in the root of your tests
+1. Create a `setup.cfg` in the root of your tests. This INI file is shared for all pytest plugins.
 
-  ```ini
-  [DEFAULT]
-  url = https://jira.atlassian.com
-  username = USERNAME (or blank for no authentication)
-  password = PASSWORD (or blank for no authentication)
-  ```
+    ```ini
+    [pytest]
+    jira_url = https://jira.atlassian.com
+    jira_username = USERNAME (or blank for no authentication)
+    jira_password = PASSWORD (or blank for no authentication)
+    # jira_ssl_verification = True/False
+    # jira_version = foo0.43
+    # jira_components = someComponent "Different Component"
+
+    ```
 
   Options can be overridden with command line options.
 
-  ``py.test --help``
+ ``py.test --help``
 
 2. Mark your tests with jira marker and issue id.
   ``@pytest.mark.jira('issue_id')``
