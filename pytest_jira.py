@@ -10,7 +10,7 @@ Author: James Laska
 
 import os
 import re
-import ConfigParser
+import six
 import pytest
 from jira.client import JIRA
 
@@ -122,6 +122,12 @@ class JiraHooks(object):
                 pytest.skip("%s/browse/%s" % (self.url, issue_id))
 
 
+def _get_value(config, section, name, default=None):
+    if config.has_option(section, name):
+        return config.get(section, name)
+    return default
+
+
 def pytest_addoption(parser):
     """
     Add a options section to py.test --help for jira integration.
@@ -138,26 +144,26 @@ def pytest_addoption(parser):
                     help='Enable JIRA integration.')
 
     # FIXME - Change to a credentials.yaml ?
-    config = ConfigParser.ConfigParser()
+    config = six.moves.configparser.ConfigParser()
     if os.path.exists('jira.cfg'):
         config.read('jira.cfg')
 
     group.addoption('--jira-url',
                     action='store',
                     dest='jira_url',
-                    default=config.get('DEFAULT', 'url'),
+                    default=_get_value(config, 'DEFAULT', 'url'),
                     metavar='url',
                     help='JIRA url (default: %default)')
     group.addoption('--jira-user',
                     action='store',
                     dest='jira_username',
-                    default=config.get('DEFAULT', 'username', None),
+                    default=_get_value(config, 'DEFAULT', 'username'),
                     metavar='username',
                     help='JIRA username (default: %default)')
     group.addoption('--jira-password',
                     action='store',
                     dest='jira_password',
-                    default=config.get('DEFAULT', 'password', None),
+                    default=_get_value(config, 'DEFAULT', 'password'),
                     metavar='password',
                     help='JIRA password.')
 
