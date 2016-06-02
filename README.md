@@ -1,3 +1,5 @@
+[![Build Status][travisimg]][travis]
+
 # Intro
 A [pytest][pytest] plugin for JIRA integration.
 
@@ -54,3 +56,5 @@ submitting feature requests or issues to [issues][githubissues].
 
 [pytest]: http://pytest.org/latest/
 [githubissues]: https://github.com/jlaska/pytest_jira/issues
+[travisimg]: https://travis-ci.org/rhevm-qe-automation/pytest_jira.svg?branch=master
+[travis]: https://travis-ci.org/rhevm-qe-automation/pytest_jira

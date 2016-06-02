@@ -17,6 +17,7 @@ Author: James Laska
 __version__ = "0.1"
 __name__ = "pytest_jira"
 
+
 class JiraHooks(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
@@ -30,12 +31,13 @@ class JiraHooks(object):
 
         # Setup basic_auth
         if self.username and self.password:
-            basic_auth=(self.username, self.password)
+            basic_auth = (self.username, self.password)
         else:
-            basic_auth=None
+            basic_auth = None
 
         # TODO - use requests REST API instead to drop a dependency
-        # (https://confluence.atlassian.com/display/DOCSPRINT/The+Simplest+Possible+JIRA+REST+Examples)
+        # (https://confluence.atlassian.com/display/DOCSPRINT/
+        # The+Simplest+Possible+JIRA+REST+Examples)
         self.jira = JIRA(options=dict(server=self.url),
                          basic_auth=basic_auth)
 
@@ -71,7 +73,8 @@ class JiraHooks(object):
         # Access Jira issue (may be cached)
         if issue_id not in self.issue_cache:
             try:
-                self.issue_cache[issue_id] = self.jira.issue(issue_id).fields.status.name.lower()
+                self.issue_cache[issue_id] = self.jira.issue(
+                    issue_id).fields.status.name.lower()
             except:
                 self.issue_cache[issue_id] = 'open'
 
@@ -119,6 +122,7 @@ class JiraHooks(object):
             if not jira_run and not self.is_issue_resolved(issue_id):
                 pytest.skip("%s/browse/%s" % (self.url, issue_id))
 
+
 def pytest_addoption(parser):
     """
     Add a options section to py.test --help for jira integration.
@@ -158,6 +162,7 @@ def pytest_addoption(parser):
                     metavar='password',
                     help='JIRA password.')
 
+
 def pytest_configure(config):
     """
     If jira is enabled, setup a session
@@ -165,12 +170,13 @@ def pytest_configure(config):
 
     :param config: configuration object
     """
-    config.addinivalue_line("markers",
+    config.addinivalue_line(
+        "markers",
         "jira([issue_id,...], run=True): xfail the test if the provided JIRA "
         "issue(s) remains unresolved.  When 'run' is True, the test will be "
-        "executed.  If a failure occurs, the test will xfail.  When 'run' is False, the "
-        "test will be skipped prior to execution.  See "
-        "https://github.com/jlaska/pytest_jira"
+        "executed.  If a failure occurs, the test will xfail. "
+        "When 'run' is False, the test will be skipped prior to execution. "
+        "See https://github.com/rhevm-qe-automation/pytest_jira"
     )
 
     if config.getvalue("jira") and config.getvalue('jira_url'):
@@ -179,5 +185,3 @@ def pytest_configure(config):
                                 config.getvalue('jira_password'))
         ok = config.pluginmanager.register(jira_plugin)
         assert ok
-
-
