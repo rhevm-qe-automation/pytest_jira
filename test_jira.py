@@ -1,9 +1,8 @@
 import pytest
-import os
-import xmlrpclib
 
 RESOLVED_ISSUE = 'ORG-1412'
 UNRESOLVED_ISSUE = 'ORG-1382'
+
 
 @pytest.mark.skip_selenium
 @pytest.mark.nondestructive
