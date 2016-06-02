@@ -1,5 +1,6 @@
 [![Build Status][travisimg]][travis]
 [![Code Health][codehealthimg]][codehealth]
+[![Code Coverage][codecovimg]][codecov]
 
 # Intro
 A [pytest][pytest] plugin for JIRA integration.
@@ -61,3 +62,5 @@ submitting feature requests or issues to [issues][githubissues].
 [travis]: https://travis-ci.org/rhevm-qe-automation/pytest_jira
 [codehealthimg]: https://landscape.io/github/rhevm-qe-automation/pytest_jira/master/landscape.svg?style=flat
 [codehealth]: https://landscape.io/github/rhevm-qe-automation/pytest_jira/master
+[codecovimg]: https://codecov.io/gh/rhevm-qe-automation/pytest_jira/branch/master/graph/badge.svg
+[codecov]: https://codecov.io/gh/rhevm-qe-automation/pytest_jira
