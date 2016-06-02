@@ -1,9 +1,3 @@
-import os
-import re
-import ConfigParser
-import pytest
-from jira.client import JIRA
-
 """
 This plugin integrates pytest with jira; allowing the tester to mark a test
 with a bug id.  The test will then be skipped unless the issue status is closed
@@ -14,8 +8,13 @@ You must set the url either at the command line or in jira.cfg.
 Author: James Laska
 """
 
+import os
+import re
+import ConfigParser
+import pytest
+from jira.client import JIRA
+
 __version__ = "0.1"
-__name__ = "pytest_jira"
 
 
 class JiraHooks(object):
@@ -75,7 +74,7 @@ class JiraHooks(object):
             try:
                 self.issue_cache[issue_id] = self.jira.issue(
                     issue_id).fields.status.name.lower()
-            except:
+            except Exception:
                 self.issue_cache[issue_id] = 'open'
 
         # Skip test if issue remains unresolved
@@ -90,7 +89,7 @@ class JiraHooks(object):
         rep = __multicall__.execute()
         try:
             jira_ids = self.get_jira_issues(item)
-        except:
+        except Exception:
             jira_ids = []
 
         if call.when == 'call' and jira_ids:
