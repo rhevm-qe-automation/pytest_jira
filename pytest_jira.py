@@ -188,5 +188,5 @@ def pytest_configure(config):
         jira_plugin = JiraHooks(config.getvalue('jira_url'),
                                 config.getvalue('jira_username'),
                                 config.getvalue('jira_password'))
-        ok = config.pluginmanager.register(jira_plugin)
+        ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
         assert ok

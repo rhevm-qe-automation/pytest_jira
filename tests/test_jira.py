@@ -1,82 +1,239 @@
 import pytest
 
-RESOLVED_ISSUE = 'ORG-1412'
-UNRESOLVED_ISSUE = 'ORG-1382'
+
+CONFTEST = """
+import pytest
 
 
-@pytest.mark.skip_selenium
-@pytest.mark.nondestructive
-class Test_Pytest_JIRA_Marker(object):
+FAKE_ISSUES = {
+    "ORG-1412": "closed",
+    "ORG-1382": "open",
+}
 
-    @pytest.mark.xfail(reason='Expected xfail due to bad marker')
-    @pytest.mark.jira
-    def test_jira_marker_no_args(self):
-        assert True
 
-    @pytest.mark.xfail(reason='Expected xfail due to bad marker')
-    @pytest.mark.jira('there is no issue here')
-    def test_jira_marker_bad_args(self):
-        assert True
+@pytest.mark.tryfirst
+def pytest_collection_modifyitems(session, config, items):
+    plug = config.pluginmanager.getplugin("jira_plugin")
+    assert plug is not None
+    plug.issue_cache.update(FAKE_ISSUES)
+"""
 
-    @pytest.mark.xfail(reason='Expected xfail due to bad marker')
-    @pytest.mark.jira(None)
-    def test_jira_marker_bad_args2(self):
-        assert True
 
-    @pytest.mark.jira(UNRESOLVED_ISSUE, run=False)
-    def test_jira_marker_no_run(self):
-        '''Expected skip due to run=False'''
-        assert False
+PLUGIN_ARGS = (
+    '--jira',
+    '--jira-url', 'https://issues.jboss.org',
+)
 
-    @pytest.mark.jira(UNRESOLVED_ISSUE, run=True)
-    def test_open_jira_marker_pass(self):
-        '''Expected skip due to unresolved JIRA'''
-        assert True
 
-    def test_open_jira_docstr_pass(self):
-        '''Expected skip due to unresolved JIRA Issue %s'''
-        assert True
-    test_open_jira_docstr_pass.__doc__ %= UNRESOLVED_ISSUE
+def assert_outcomes(
+    result, passed, skipped, failed, error=0, xpassed=0, xfailed=0
+):
+    outcomes = result.parseoutcomes()
+    assert outcomes.get("passed", 0) == passed
+    assert outcomes.get("skipped", 0) == skipped
+    assert outcomes.get("failed", 0) == failed
+    assert outcomes.get("error", 0) == error
+    assert outcomes.get("xpassed", 0) == xpassed
+    assert outcomes.get("xfailed", 0) == xfailed
 
-    @pytest.mark.jira(UNRESOLVED_ISSUE, run=True)
-    def test_open_jira_marker_fail(self):
-        '''Expected skip due to unresolved JIRA'''
-        assert False
 
-    def test_open_jira_docstr_fail(self):
-        '''Expected skip due to unresolved JIRA Issue %s'''
-        assert False
-    test_open_jira_docstr_fail.__doc__ %= UNRESOLVED_ISSUE
+def test_jira_marker_no_args(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
 
-    @pytest.mark.jira(RESOLVED_ISSUE, run=True)
-    def test_closed_jira_marker_pass(self):
-        '''Expected PASS due to resolved JIRA Issue'''
-        assert True
+        @pytest.mark.jira
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, 1)
 
-    def test_closed_jira_docstr_pass(self):
-        '''Expected PASS due to resolved JIRA Issue %s'''
-        assert True
-    test_closed_jira_docstr_pass.__doc__ %= RESOLVED_ISSUE
 
-    @pytest.mark.xfail(reason='Expected xfail due to resolved JIRA issue')
-    @pytest.mark.jira(RESOLVED_ISSUE, run=True)
-    def test_closed_jira_marker_fail(self):
-        assert False
+@pytest.mark.xfail(reason="It doesn't fail but it should, need to fix (#25)")
+def test_jira_marker_bad_args(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
 
-    @pytest.mark.xfail(reason='Expected xfail due to resolved JIRA issue')
-    def test_closed_jira_docstr_fail(self):
-        '''Expected xfail due to resolved JIRA Issue %s'''
-        assert False
-    test_closed_jira_docstr_fail.__doc__ %= RESOLVED_ISSUE
+        @pytest.mark.jira("there is no issue here")
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, 1)
 
-    def test_pass_without_jira(self):
-        assert True
 
-    @pytest.mark.xfail(reason='Expected xfail due to normal test failure')
-    def test_fail_without_jira_marker(self):
-        assert False
+def test_jira_marker_bad_args2(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
 
-    @pytest.mark.xfail(reason='Expected xfail due to normal test failure')
-    def test_fail_without_jira_docstr(self):
-        '''docstring with no jira issue'''
-        assert False
+        @pytest.mark.jira(None)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, 1)
+
+
+def test_jira_marker_no_run(testdir):
+    '''Expected skip due to run=False'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", run=False)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 1, 0)
+
+
+def test_open_jira_marker_pass(testdir):
+    '''Expected skip due to unresolved JIRA'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", run=True)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, 0, 1)
+
+
+def test_open_jira_docstr_pass(testdir):
+    '''Expected skip due to unresolved JIRA Issue %s'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        def test_pass():
+            \"\"\"
+            ORG-1382
+            \"\"\"
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, 0, 1)
+
+
+def test_open_jira_marker_fail(testdir):
+    '''Expected skip due to unresolved JIRA'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", run=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_open_jira_docstr_fail(testdir):
+    '''Expected skip due to unresolved JIRA Issue %s'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        def test_fail():
+            \"\"\"
+            ORG-1382
+            \"\"\"
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_closed_jira_marker_pass(testdir):
+    '''Expected PASS due to resolved JIRA Issue'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1412", run=True)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(1, 0, 0)
+
+
+def test_closed_jira_docstr_pass(testdir):
+    '''Expected PASS due to resolved JIRA Issue %s'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        def test_fail():
+            \"\"\"
+            ORG-1412
+            \"\"\"
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(1, 0, 0)
+
+
+def test_closed_jira_marker_fail(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1412", run=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_closed_jira_docstr_fail(testdir):
+    '''Expected xfail due to resolved JIRA Issue %s'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        def test_fail():
+            \"\"\"
+            ORG-1412
+            \"\"\"
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_pass_without_jira(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        def test_pass():
+            \"\"\"
+            some description
+            \"\"\"
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(1, 0, 0)
+
+
+def test_fail_without_jira_marker(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_fail_without_jira_docstr(testdir):
+    '''docstring with no jira issue'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        def test_pass():
+            \"\"\"
+            some description
+            \"\"\"
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
