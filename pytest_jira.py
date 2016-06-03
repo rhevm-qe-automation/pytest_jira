@@ -14,8 +14,6 @@ import six
 import pytest
 from jira.client import JIRA
 
-__version__ = "0.1"
-
 
 class JiraHooks(object):
     issue_re = r"([A-Z]+-[0-9]+)"
