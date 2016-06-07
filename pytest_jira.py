@@ -18,10 +18,12 @@ from jira.client import JIRA
 class JiraHooks(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, url, username=None, password=None):
+    def __init__(self, url, username=None, password=None, verify=True):
+        self.jira = None
         self.url = url
         self.username = username
         self.password = password
+        self.verify = verify
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
@@ -35,8 +37,15 @@ class JiraHooks(object):
         # TODO - use requests REST API instead to drop a dependency
         # (https://confluence.atlassian.com/display/DOCSPRINT/
         # The+Simplest+Possible+JIRA+REST+Examples)
-        self.jira = JIRA(options=dict(server=self.url),
-                         basic_auth=basic_auth)
+        self.jira = JIRA(
+            options=dict(server=self.url, verify=self.verify),
+            basic_auth=basic_auth,
+            validate=bool(basic_auth),
+            max_retries=1
+        )
+
+    def is_connected(self):
+        return self.jira is not None
 
     def get_jira_issues(self, item):
         issue_pattern = re.compile(self.issue_re)
@@ -146,6 +155,11 @@ def pytest_addoption(parser):
     if os.path.exists('jira.cfg'):
         config.read('jira.cfg')
 
+    try:
+        verify = config.getboolean('DEFAULT', 'ssl_verification')
+    except six.moves.configparser.NoOptionError:
+        verify = True
+
     group.addoption('--jira-url',
                     action='store',
                     dest='jira_url',
@@ -164,6 +178,12 @@ def pytest_addoption(parser):
                     default=_get_value(config, 'DEFAULT', 'password'),
                     metavar='password',
                     help='JIRA password.')
+    group.addoption('--jira-no-ssl-verify',
+                    action='store_false',
+                    dest='jira_verify',
+                    default=verify,
+                    help='Disable SSL verification to Jira'
+                    )
 
 
 def pytest_configure(config):
@@ -181,10 +201,12 @@ def pytest_configure(config):
         "When 'run' is False, the test will be skipped prior to execution. "
         "See https://github.com/rhevm-qe-automation/pytest_jira"
     )
-
-    if config.getvalue("jira") and config.getvalue('jira_url'):
+    if config.getvalue('jira') and config.getvalue('jira_url'):
         jira_plugin = JiraHooks(config.getvalue('jira_url'),
                                 config.getvalue('jira_username'),
-                                config.getvalue('jira_password'))
-        ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
-        assert ok
+                                config.getvalue('jira_password'),
+                                config.getvalue('jira_verify'))
+        if jira_plugin.is_connected():
+            # if connection to jira fails, plugin won't be loaded
+            ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
+            assert ok
