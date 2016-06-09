@@ -28,7 +28,7 @@ Please feel free to contribute by forking and submitting pull requests or by
 submitting feature requests or issues to [issues][githubissues].
 
 ## Requires
-* pytest >= 2.2.3
+* pytest >= 2.9.0
 * jira >= 0.43
 * six
 
@@ -36,14 +36,14 @@ submitting feature requests or issues to [issues][githubissues].
 ``pip install pytest_jira``
 
 ## Usage
-1. Create a `jira.cfg` in the root of your tests
+1. Create a `pytest.ini` in the root of your tests
 
   ```ini
-  [DEFAULT]
-  url = https://jira.atlassian.com
-  username = USERNAME (or blank for no authentication)
-  password = PASSWORD (or blank for no authentication)
-  # ssl_verification = True/False
+  [pytest]
+  jira_url = https://jira.atlassian.com
+  jira_username = USERNAME (or blank for no authentication)
+  jira_password = PASSWORD (or blank for no authentication)
+  # jira_ssl_verify = True/False
   ```
 
   Options can be overridden with command line options.

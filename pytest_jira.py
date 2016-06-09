@@ -3,14 +3,12 @@ This plugin integrates pytest with jira; allowing the tester to mark a test
 with a bug id.  The test will then be skipped unless the issue status is closed
 or resolved.
 
-You must set the url either at the command line or in jira.cfg.
+You must set the url either at the command line or in any pytest INI file.
 
 Author: James Laska
 """
 
-import os
 import re
-import six
 import pytest
 from jira.client import JIRA
 
@@ -138,52 +136,71 @@ def _get_value(config, section, name, default=None):
 def pytest_addoption(parser):
     """
     Add a options section to py.test --help for jira integration.
-    Parse configuration file, jira.cfg and / or the command line options
+    Parse configuration files and / or the command line options
     passed.
 
     :param parser: Command line options.
     """
-    group = parser.getgroup('JIRA integration')
-    group.addoption('--jira',
-                    action='store_true',
-                    default=False,
-                    dest='jira',
-                    help='Enable JIRA integration.')
-
-    # FIXME - Change to a credentials.yaml ?
-    config = six.moves.configparser.ConfigParser()
-    if os.path.exists('jira.cfg'):
-        config.read('jira.cfg')
-
-    try:
-        verify = config.getboolean('DEFAULT', 'ssl_verification')
-    except six.moves.configparser.NoOptionError:
-        verify = True
-
-    group.addoption('--jira-url',
-                    action='store',
-                    dest='jira_url',
-                    default=_get_value(config, 'DEFAULT', 'url'),
-                    metavar='url',
-                    help='JIRA url (default: %default)')
-    group.addoption('--jira-user',
-                    action='store',
-                    dest='jira_username',
-                    default=_get_value(config, 'DEFAULT', 'username'),
-                    metavar='username',
-                    help='JIRA username (default: %default)')
-    group.addoption('--jira-password',
-                    action='store',
-                    dest='jira_password',
-                    default=_get_value(config, 'DEFAULT', 'password'),
-                    metavar='password',
-                    help='JIRA password.')
-    group.addoption('--jira-no-ssl-verify',
-                    action='store_false',
-                    dest='jira_verify',
-                    default=verify,
-                    help='Disable SSL verification to Jira'
-                    )
+    # INI file options
+    parser.addini(
+        'jira_url',
+        'JIRA url (default: %s)' % None,
+        default=None
+    )
+    parser.addini(
+        'jira_username',
+        'JIRA username (default: %s)' % None,
+        default=None
+    )
+    parser.addini(
+        'jira_password',
+        'JIRA password.',
+        default=None
+    )
+    parser.addini(
+        'jira_ssl_verify',
+        'SSL verification (default: %s)' % True,
+        type='bool',
+        default=True
+    )
+    # command line options
+    parser.addoption(
+        '--jira',
+        action='store_true',
+        default=False,
+        dest='jira',
+        help='Enable JIRA integration.'
+    )
+    parser.addoption(
+        '--jira-url',
+        action='store',
+        dest='url',
+        default=None,
+        metavar='jira_url',
+        help='JIRA url (default: %s)' % None
+    )
+    parser.addoption(
+        '--jira-user',
+        action='store',
+        dest='username',
+        default=None,
+        metavar='jira_username',
+        help='JIRA username (default: %s)' % None
+    )
+    parser.addoption(
+        '--jira-password',
+        action='store',
+        dest='password',
+        default=None,
+        metavar='jira_password',
+        help='JIRA password.'
+    )
+    parser.addoption(
+        '--jira-no-ssl-verify',
+        action='store_false',
+        dest='verify',
+        help='Disable SSL verification to Jira'
+    )
 
 
 def pytest_configure(config):
@@ -201,11 +218,13 @@ def pytest_configure(config):
         "When 'run' is False, the test will be skipped prior to execution. "
         "See https://github.com/rhevm-qe-automation/pytest_jira"
     )
-    if config.getvalue('jira') and config.getvalue('jira_url'):
-        jira_plugin = JiraHooks(config.getvalue('jira_url'),
-                                config.getvalue('jira_username'),
-                                config.getvalue('jira_password'),
-                                config.getvalue('jira_verify'))
+    if config.getvalue('jira'):
+        jira_plugin = JiraHooks(
+            config.getoption('url') or config.getini('jira_url'),
+            config.getoption('username') or config.getini('jira_username'),
+            config.getoption('password') or config.getini('jira_password'),
+            config.getoption('verify') and config.getini('jira_ssl_verify')
+        )
         if jira_plugin.is_connected():
             # if connection to jira fails, plugin won't be loaded
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
