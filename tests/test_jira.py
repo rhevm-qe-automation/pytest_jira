@@ -241,10 +241,10 @@ def test_fail_without_jira_docstr(testdir):
 def test_invalid_configuration_exception(testdir):
     '''Invalid option in config file, exception should be rised'''
     testdir.makefile(
-        '.cfg',
-        jira="\n".join([
-            '[DEFAULT]',
-            'ssl_verification = something',
+        '.ini',
+        pytest="\n".join([
+            '[pytest]',
+            'jira_ssl_verify = something',
         ])
     )
     testdir.makepyfile("""
@@ -254,7 +254,7 @@ def test_invalid_configuration_exception(testdir):
             pass
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
-    assert "ValueError: Not a boolean: something" in result.stderr.str()
+    assert "ValueError: invalid truth value" in result.stderr.str()
 
 
 def test_invalid_authentification_exception(testdir):
@@ -279,11 +279,11 @@ def test_disabled_ssl_verification_pass(testdir):
     '''Expected PASS due to resolved JIRA Issue'''
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
-        '.cfg',
-        jira="\n".join([
-            '[DEFAULT]',
-            'url = https://issues.jboss.org',
-            'ssl_verification = false',
+        '.ini',
+        pytest="\n".join([
+            '[pytest]',
+            'jira_url = https://issues.jboss.org',
+            'jira_ssl_verify = false',
         ])
     )
     testdir.makepyfile("""

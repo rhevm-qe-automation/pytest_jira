@@ -1,4 +1,4 @@
-pytest>=2.2.4
+pytest>=2.9.0
 jira>=0.43
 six
 ordereddict; python_version=='2.6'
