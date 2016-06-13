@@ -152,8 +152,13 @@ def pytest_addoption(parser):
 
     # FIXME - Change to a credentials.yaml ?
     config = six.moves.configparser.ConfigParser()
-    if os.path.exists('jira.cfg'):
-        config.read('jira.cfg')
+    config.read(
+        [
+            '/etc/jira.cfg',
+            os.path.expanduser('~/jira.cfg'),
+            'jira.cfg',
+        ]
+    )
 
     try:
         verify = config.getboolean('DEFAULT', 'ssl_verification')
