@@ -47,6 +47,7 @@ submitting feature requests or issues to [issues][githubissues].
   ```
 
   Options can be overridden with command line options.
+  The configuration file can also be placed in `/etc/jira.cfg` and `~/jira.cfg`.
 
   ``py.test --help``
 

@@ -1,4 +1,5 @@
 import pytest
+import os
 
 
 CONFTEST = """
@@ -295,3 +296,23 @@ def test_disabled_ssl_verification_pass(testdir):
     """)
     result = testdir.runpytest('--jira')
     result.assert_outcomes(1, 0, 0)
+
+
+def test_config_file_paths_xfail(testdir):
+    '''Jira url set in ~/jira.cfg'''
+    testdir.makeconftest(CONFTEST)
+    homedir = testdir.mkdir('home')
+    os.environ['HOME'] = os.getcwd() + '/home'
+    homedir.ensure('jira.cfg').write(
+        '[DEFAULT]\nurl = https://issues.jboss.org',
+    )
+    assert os.path.isfile(os.getcwd() + '/home/jira.cfg')
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", run=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest('--jira')
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
