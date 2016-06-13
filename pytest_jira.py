@@ -67,9 +67,14 @@ class JiraHooks(object):
             )
 
         # Filter valid issues, and return unique issues
-        return [
-            jid for jid in set(jira_ids) if issue_pattern.match(jid)
-        ]
+        for jid in set(jira_ids):
+            if not issue_pattern.match(jid):
+                raise ValueError(
+                    'JIRA marker argument `%s` does not match pattern' % jid
+                )
+        return list(
+            set(jira_ids)
+        )
 
     def is_issue_resolved(self, issue_id):
         '''
