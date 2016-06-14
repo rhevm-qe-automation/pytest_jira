@@ -1,4 +1,3 @@
-import pytest
 import os
 
 
@@ -50,7 +49,6 @@ def test_jira_marker_no_args(testdir):
     assert_outcomes(result, 0, 0, 0, 1)
 
 
-@pytest.mark.xfail(reason="It doesn't fail but it should, need to fix (#25)")
 def test_jira_marker_bad_args(testdir):
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
