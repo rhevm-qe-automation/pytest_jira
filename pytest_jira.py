@@ -18,34 +18,18 @@ from jira.client import JIRA
 class JiraHooks(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, url, username=None, password=None, verify=True):
-        self.jira = None
-        self.url = url
-        self.username = username
-        self.password = password
-        self.verify = verify
+    def __init__(
+        self,
+        connection,
+        version=None,
+        components=None,
+    ):
+        self.conn = connection
+        self.components = set(components) if components else None
+        self.version = version
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
-
-        # Setup basic_auth
-        if self.username and self.password:
-            basic_auth = (self.username, self.password)
-        else:
-            basic_auth = None
-
-        # TODO - use requests REST API instead to drop a dependency
-        # (https://confluence.atlassian.com/display/DOCSPRINT/
-        # The+Simplest+Possible+JIRA+REST+Examples)
-        self.jira = JIRA(
-            options=dict(server=self.url, verify=self.verify),
-            basic_auth=basic_auth,
-            validate=bool(basic_auth),
-            max_retries=1
-        )
-
-    def is_connected(self):
-        return self.jira is not None
 
     def get_jira_issues(self, item):
         issue_pattern = re.compile(self.issue_re)
@@ -84,13 +68,15 @@ class JiraHooks(object):
         # Access Jira issue (may be cached)
         if issue_id not in self.issue_cache:
             try:
-                self.issue_cache[issue_id] = self.jira.issue(
-                    issue_id).fields.status.name.lower()
+                self.issue_cache[issue_id] = self.conn.get_issue(issue_id)
             except Exception:
-                self.issue_cache[issue_id] = 'open'
+                self.issue_cache[issue_id] = {'status': 'open'}
 
         # Skip test if issue remains unresolved
-        return self.issue_cache[issue_id] in ['closed', 'resolved']
+        if self.issue_cache[issue_id]['status'] in ['closed', 'resolved']:
+            return self.fixed_in_version(issue_id)
+        else:
+            return not self.is_affected(issue_id)
 
     @pytest.mark.tryfirst
     def pytest_runtest_makereport(self, item, call, __multicall__):
@@ -131,7 +117,88 @@ class JiraHooks(object):
         # Check all linked issues
         for issue_id in jira_ids:
             if not jira_run and not self.is_issue_resolved(issue_id):
-                pytest.skip("%s/browse/%s" % (self.url, issue_id))
+                pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
+
+    def fixed_in_version(self, issue_id):
+        '''
+        Return True if:
+            jira_product_version was not specified
+            OR issue was fixed for jira_product_version
+        else return False
+        '''
+        if not self.version:
+            return True
+        affected = self.issue_cache[issue_id].get('versions', set())
+        fixed = self.issue_cache[issue_id].get('fixed_versions', set())
+        return self.version not in (affected - fixed)
+
+    def is_affected(self, issue_id):
+        '''
+        Return True if:
+            at least one component affected (or not specified)
+            version is affected (or not specified)
+        else return False
+        '''
+        return (
+            self._affected_version(issue_id) and
+            self._affected_components(issue_id)
+        )
+
+    def _affected_version(self, issue_id):
+        affected = self.issue_cache[issue_id].get('versions', set())
+        if not self.version or not affected:
+            return True
+        return self.version in affected
+
+    def _affected_components(self, issue_id):
+        affected = self.issue_cache[issue_id].get('components', set())
+        if not self.components or not affected:
+            return True
+        return bool(self.components.intersection(affected))
+
+
+class JiraSiteConnection(object):
+    def __init__(
+        self, url,
+        username=None,
+        password=None,
+        verify=True,
+    ):
+        self.url = url
+        self.username = username
+        self.password = password
+        self.verify = verify
+
+        # Setup basic_auth
+        if self.username and self.password:
+            basic_auth = (self.username, self.password)
+        else:
+            basic_auth = None
+
+        # TODO - use requests REST API instead to drop a dependency
+        # (https://confluence.atlassian.com/display/DOCSPRINT/
+        # The+Simplest+Possible+JIRA+REST+Examples)
+        self.jira = JIRA(
+            options=dict(server=self.url, verify=self.verify),
+            basic_auth=basic_auth,
+            validate=bool(basic_auth),
+            max_retries=1
+        )
+
+    def is_connected(self):
+        return self.jira is not None
+
+    def get_issue(self, issue_id):
+        field = self.jira.issue(issue_id).fields
+        return {
+            'components': set(c.name for c in field.components),
+            'versions': set(v.name for v in field.versions),
+            'fixed_versions': set(v.name for v in field.fixVersions),
+            'status': field.status.name.lower(),
+        }
+
+    def get_url(self):
+        return self.url
 
 
 def _get_value(config, section, name, default=None):
@@ -194,6 +261,19 @@ def pytest_addoption(parser):
                     default=verify,
                     help='Disable SSL verification to Jira'
                     )
+    group.addoption('--jira-components',
+                    action='store',
+                    nargs='+',
+                    dest='jira_components',
+                    default=_get_value(config, 'DEFAULT', 'components', ''),
+                    help='Used components'
+                    )
+    group.addoption('--jira-product-version',
+                    action='store',
+                    dest='jira_product_version',
+                    default=_get_value(config, 'DEFAULT', 'version'),
+                    help='Used version'
+                    )
 
 
 def pytest_configure(config):
@@ -211,12 +291,23 @@ def pytest_configure(config):
         "When 'run' is False, the test will be skipped prior to execution. "
         "See https://github.com/rhevm-qe-automation/pytest_jira"
     )
+    components = config.getvalue('jira_components')
+    if isinstance(components, six.string_types):
+        components = [c for c in components.split(',') if c]
+
     if config.getvalue('jira') and config.getvalue('jira_url'):
-        jira_plugin = JiraHooks(config.getvalue('jira_url'),
-                                config.getvalue('jira_username'),
-                                config.getvalue('jira_password'),
-                                config.getvalue('jira_verify'))
-        if jira_plugin.is_connected():
+        jira_connection = JiraSiteConnection(
+            config.getvalue('jira_url'),
+            config.getvalue('jira_username'),
+            config.getvalue('jira_password'),
+            config.getvalue('jira_verify'),
+        )
+        if jira_connection.is_connected():
             # if connection to jira fails, plugin won't be loaded
+            jira_plugin = JiraHooks(
+                jira_connection,
+                config.getvalue('jira_product_version'),
+                components,
+            )
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
             assert ok

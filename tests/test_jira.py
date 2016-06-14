@@ -6,8 +6,26 @@ import pytest
 
 
 FAKE_ISSUES = {
-    "ORG-1412": "closed",
-    "ORG-1382": "open",
+    "ORG-1412": {"status": "closed"},
+    "ORG-1382": {"status": "open"},
+    "ORG-1510": {
+        "components": set(["com1", "com2"]),
+        "versions": set(),
+        "fixed_versions": set(),
+        "status": "open",
+    },
+    "ORG-1511": {
+        "components": set(["com1", "com2"]),
+        "versions": set(["foo-0.1", "foo-0.2"]),
+        "fixVersions": set(),
+        "status": "open",
+    },
+    "ORG-1501": {
+        "components": set(),
+        "versions": set(["foo-0.1", "foo-0.2"]),
+        "fixed_versions": set(["foo-0.2"]),
+        "status": "closed",
+    },
 }
 
 
@@ -314,3 +332,81 @@ def test_config_file_paths_xfail(testdir):
     """)
     result = testdir.runpytest('--jira')
     assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_closed_for_different_version_skipped(testdir):
+    '''Skiped, closed for different version'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.cfg',
+        jira="\n".join([
+            '[DEFAULT]',
+            'components = com1,com3',
+            'version = foo-0.1',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1501", run=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 1, 0)
+
+
+def test_open_for_different_version_failed(testdir):
+    '''Failed, open for different version'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.cfg',
+        jira="\n".join([
+            '[DEFAULT]',
+            'components = com1,com3',
+            'version = foo-1.1',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1511", run=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 1)
+
+
+def test_get_issue_info_from_remote_passed(testdir):
+        testdir.makeconftest(CONFTEST)
+        testdir.makepyfile("""
+            def test_pass():
+                \"\"\"
+                XNIO-250
+                \"\"\"
+                assert True
+        """)
+        result = testdir.runpytest(*PLUGIN_ARGS)
+        result.assert_outcomes(1, 0, 0)
+
+
+def test_affected_component_skiped(testdir):
+    '''Skiped, affected component'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1511", run=False)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url',
+        'https://issues.jboss.org',
+        '--jira-components',
+        'com3',
+        'com1',
+    )
+    assert_outcomes(result, 0, 1, 0)
