@@ -314,3 +314,20 @@ def test_config_file_paths_xfail(testdir):
     """)
     result = testdir.runpytest('--jira')
     assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_docstr_marker_xfail(testdir):
+    '''docstring with jira issue id'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1412", run=True)
+        def test_fail():
+            \"\"\"
+            JIRA: ORG-1382
+            \"\"\"
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
