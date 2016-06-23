@@ -9,47 +9,74 @@ This plugin links tests with JIRA tickets. The plugin behaves similar to
 the `pytest-bugzilla <https://pypi.python.org/pypi/pytest-bugzilla>`__
 plugin.
 
--  If the test fails ...
-
-   -  and the JIRA ticket is still **unresolved** (i.e. not fixed), the
-      test result is **xfail** (e.g. known failure).
-
-   -  and the JIRA ticket is **resolved** (i.e. fixed), the test result is
-      **fail** (e.g. unexpected failure).
-
--  If the test passed ...
-
-   -  and the JIRA ticket is still **unresolved** (i.e. not fixed), the
-      test result is **xpassed** (e.g. unexpected pass).
-   -  and the JIRA ticket is **resolved**, the test result is **passed**
-      (e.g. everything works).
-
 The plugin does not close JIRA tickets, or create them. It just allows
 you to link tests to existing tickets.
 
-This plugin currently assumes the following workflow:
-
-A JIRA issue with status in ['Closed', 'Resolved'] is assumed to be
-resolved. All other issues are considered unresolved.
-
 Please feel free to contribute by forking and submitting pull requests
 or by submitting feature requests or issues to
-`issues <https://github.com/jlaska/pytest_jira/issues>`__.
+`issues <https://github.com/rhevm-qe-automation/pytest_jira/issues>`__.
+
+Test results
+------------
+-  If the test **unresolved** ...
+
+   -  and the *run=False*, the test is **skiped**
+
+   -  and the *run=True* or not set, the test is executed and based on it
+      the result is **xpassed** (e.g. unexpected pass) or **xfailed** (e.g. expected fail)
+
+-  If the test **resolved** ...
+
+   -  the test is executed and based on it
+      the result is **passed** or **failed**
+
+Marking tests
+-------------
+You can specify jira issue ID in docstring or in pytest.mark.jira decorator.
+
+If you use decorator you can specify optional parameter ``run``. If it's false
+and issue is unresolved, the test will be skipped.
+
+Example
+^^^^^^^
+ .. code:: python
+
+    @pytest.mark.jira("ORG-1382", run=False)
+    def test_skip(): # will be skipped if unresolved
+        assert False
+
+    @pytest.mark.jira("ORG-1382")
+    def test_xfail(): # will run and xfail if unresolved
+        assert False
+
+    def test_xpass(): # will run and xpass if unresolved
+    """issue: ORG-1382"""
+        assert True
+
+Status evaluation
+-----------------
+Issues are consider **resolved** if their status is "Resolved" or "Closed".
+If you specify components (in command line or jira.cfg), open issues will be considered
+**unresolved** only if they are also open for at least one used component.
+
+If you specify version, open issues will be **unresolved** only if they also affects your version.
+Even when the issue is closed, but your version was affected and it was not fixed for your version,
+the issue will be considered **unresolved**.
 
 Requires
---------
+========
 
 -  pytest >= 2.2.3
 -  jira >= 0.43
 -  six
 
 Installation
-------------
+============
 
 ``pip install pytest_jira``
 
 Usage
------
+=====
 
 
 1. Create a ``jira.cfg`` in the root of your tests: ::
