@@ -37,6 +37,23 @@ You can specify jira issue ID in docstring or in pytest.mark.jira decorator.
 If you use decorator you can specify optional parameter ``run``. If it's false
 and issue is unresolved, the test will be skipped.
 
+You can disable searching for issue ID in doc string by using
+``--jira-disable-docs-search`` parameter or by ``docs_search=False``
+in `jira.cfg`. It's also possible to change behavior if issue ID was not found
+by setting ``--jira-marker-strategy=STRATEGY`` or in config file
+as `marker_strategy=STRATEGY`.
+
+You can use one of following strategies:
+
+- open - issue is considered as open (default)
+- strict - raise an exception
+- ignore - issue id is ignored
+- warn - write error message and ignore
+
+By default the regular expression patter for matching jira issue ID is `[A-Z]+-[0-9]+`,
+it can by changed by ``--jira-issue-regex=REGEX`` or in a config file by
+``jira_regex=REGEX``.
+
 Example
 ^^^^^^^
  .. code:: python
@@ -88,6 +105,9 @@ Usage
     # ssl_verification = True/False
     # version = foo-1.0
     # components = com1,second component,com3
+    # strategy = [open|strict|warn|ignore] (dealing with not found issues)
+    # docs_search = False (disable searching for issue id in docs)
+    # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
 
    Options can be overridden with command line options. The configuration
    file can also be placed in ``/etc/jira.cfg`` and ``~/jira.cfg``.

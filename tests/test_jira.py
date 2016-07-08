@@ -410,3 +410,144 @@ def test_affected_component_skiped(testdir):
         'com1',
     )
     assert_outcomes(result, 0, 1, 0)
+
+
+def test_strategy_ignore_failed(testdir):
+    '''Invalid issue ID is ignored and test failes'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.cfg',
+        jira="\n".join([
+            '[DEFAULT]',
+            'url = https://issues.jboss.org',
+            'marker_strategy = ignore',
+            'docs_search = False',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1412789456148865", run=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest('--jira')
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_strategy_strict_exception(testdir):
+    '''Invalid issue ID, exception is rised'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        def test_fail():
+            \"\"\"
+            issue: 89745-1412789456148865
+            \"\"\"
+            assert False
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-marker-strategy', 'strict',
+        '--jira-issue-regex',  '[0-9]+-[0-9]+',
+    )
+    assert "89745-1412789456148865" in result.stdout.str()
+
+
+def test_strategy_warn_fail(testdir):
+    '''Invalid issue ID is ignored and warning is written'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.cfg',
+        jira="\n".join([
+            '[DEFAULT]',
+            'url = https://issues.jboss.org',
+            'marker_strategy = warn',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1511786754387", run=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest('--jira')
+    assert "ORG-1511786754387" in result.stderr.str()
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_ignored_docs_marker_fail(testdir):
+    '''Issue is open but docs is ignored'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        def test_fail():
+            \"\"\"
+            open issue: ORG-1382
+            ignored
+            \"\"\"
+            assert False
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-disable-docs-search',
+    )
+    assert_outcomes(result, 0, 0, 1)
+
+
+def test_issue_not_found_considered_open_xfailed(testdir):
+    '''Issue is open but docs is ignored'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        def test_fail():
+            \"\"\"
+            not existing issue: ORG-13827864532876523
+            considered open by default
+            \"\"\"
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_jira_marker_bad_args_due_to_changed_regex(testdir):
+    '''Issue ID in marker doesn't match due to changed regex'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", run=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-issue-regex',  '[0-9]+-[0-9]+',
+    )
+    assert_outcomes(result, 0, 0, 0, error=1)
+
+
+def test_invalid_jira_marker_strategy_parameter(testdir):
+    '''Invalid parameter for --jira-marker-strategy'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", run=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-marker-strategy',  'invalid',
+    )
+    assert "invalid choice: \'invalid\'" in result.stderr.str()

@@ -12,53 +12,25 @@ import os
 import re
 import six
 import pytest
+import sys
 from jira.client import JIRA
 
 
 class JiraHooks(object):
-    issue_re = r"([A-Z]+-[0-9]+)"
-
     def __init__(
         self,
         connection,
+        marker,
         version=None,
         components=None,
     ):
         self.conn = connection
+        self.mark = marker
         self.components = set(components) if components else None
         self.version = version
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
-
-    def get_jira_issues(self, item):
-        issue_pattern = re.compile(self.issue_re)
-        jira_ids = []
-        # Was the jira marker used?
-        if 'jira' in item.keywords:
-            marker = item.keywords['jira']
-            if len(marker.args) == 0:
-                raise TypeError('JIRA marker requires one, or more, arguments')
-            jira_ids.extend(item.keywords['jira'].args)
-
-        # Was a jira issue referenced in the docstr?
-        if item.function.__doc__:
-            jira_ids.extend(
-                [
-                    m.group(0)
-                    for m in issue_pattern.finditer(item.function.__doc__)
-                ]
-            )
-
-        # Filter valid issues, and return unique issues
-        for jid in set(jira_ids):
-            if not issue_pattern.match(jid):
-                raise ValueError(
-                    'JIRA marker argument `%s` does not match pattern' % jid
-                )
-        return list(
-            set(jira_ids)
-        )
 
     def is_issue_resolved(self, issue_id):
         '''
@@ -70,9 +42,12 @@ class JiraHooks(object):
             try:
                 self.issue_cache[issue_id] = self.conn.get_issue(issue_id)
             except Exception:
-                self.issue_cache[issue_id] = {'status': 'open'}
+                self.issue_cache[issue_id] = self.mark.get_default(issue_id)
 
         # Skip test if issue remains unresolved
+        if self.issue_cache[issue_id] is None:
+            return True
+
         if self.issue_cache[issue_id]['status'] in ['closed', 'resolved']:
             return self.fixed_in_version(issue_id)
         else:
@@ -86,7 +61,7 @@ class JiraHooks(object):
 
         rep = __multicall__.execute()
         try:
-            jira_ids = self.get_jira_issues(item)
+            jira_ids = self.mark.get_jira_issues(item)
         except Exception:
             jira_ids = []
 
@@ -112,7 +87,7 @@ class JiraHooks(object):
         jira_run = True
         if 'jira' in item.keywords:
             jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
-        jira_ids = self.get_jira_issues(item)
+        jira_ids = self.mark.get_jira_issues(item)
 
         # Check all linked issues
         for issue_id in jira_ids:
@@ -201,9 +176,65 @@ class JiraSiteConnection(object):
         return self.url
 
 
+class JiraMarkerReporter(object):
+    issue_re = r"([A-Z]+-[0-9]+)"
+
+    def __init__(self, strategy, docs, patern):
+        self.issue_pattern = re.compile(patern or self.issue_re)
+        self.docs = docs
+        self.strategy = strategy.lower()
+
+    def get_jira_issues(self, item):
+        jira_ids = []
+        # Was the jira marker used?
+        if 'jira' in item.keywords:
+            marker = item.keywords['jira']
+            if len(marker.args) == 0:
+                raise TypeError('JIRA marker requires one, or more, arguments')
+            jira_ids.extend(item.keywords['jira'].args)
+
+        # Was a jira issue referenced in the docstr?
+        if self.docs and item.function.__doc__:
+            jira_ids.extend(
+                [
+                    m.group(0)
+                    for m in self.issue_pattern.finditer(item.function.__doc__)
+                ]
+            )
+
+        # Filter valid issues, and return unique issues
+        for jid in set(jira_ids):
+            if not self.issue_pattern.match(jid):
+                raise ValueError(
+                    'JIRA marker argument `%s` does not match pattern' % jid
+                )
+        return list(
+            set(jira_ids)
+        )
+
+    def get_default(self, jid):
+        if self.strategy == 'open':
+            return {'status': 'open'}
+        if self.strategy == 'strict':
+            raise ValueError(
+                'JIRA marker argument `%s` was not found' % jid
+            )
+        if self.strategy == 'warn':
+            sys.stderr.write(
+                'JIRA marker argument `%s` was not found' % jid
+            )
+        return None
+
+
 def _get_value(config, section, name, default=None):
     if config.has_option(section, name):
         return config.get(section, name)
+    return default
+
+
+def _get_bool(config, section, name, default=False):
+    if config.has_option(section, name):
+        return config.getboolean(section, name)
     return default
 
 
@@ -232,11 +263,6 @@ def pytest_addoption(parser):
         ]
     )
 
-    try:
-        verify = config.getboolean('DEFAULT', 'ssl_verification')
-    except six.moves.configparser.NoOptionError:
-        verify = True
-
     group.addoption('--jira-url',
                     action='store',
                     dest='jira_url',
@@ -258,8 +284,10 @@ def pytest_addoption(parser):
     group.addoption('--jira-no-ssl-verify',
                     action='store_false',
                     dest='jira_verify',
-                    default=verify,
-                    help='Disable SSL verification to Jira'
+                    default=_get_bool(
+                        config, 'DEFAULT', 'ssl_verification', True,
+                    ),
+                    help='Disable SSL verification to Jira',
                     )
     group.addoption('--jira-components',
                     action='store',
@@ -273,6 +301,32 @@ def pytest_addoption(parser):
                     dest='jira_product_version',
                     default=_get_value(config, 'DEFAULT', 'version'),
                     help='Used version'
+                    )
+    group.addoption('--jira-marker-strategy',
+                    action='store',
+                    dest='jira_marker_strategy',
+                    default=_get_value(
+                        config, 'DEFAULT', 'marker_strategy', 'open'
+                    ),
+                    choices=['open', 'strict', 'ignore', 'warn'],
+                    help='''Action if issue ID was not found
+                    open - issue is considered as open (default)
+                    strict - raise an exception
+                    ignore - issue id is ignored
+                    warn - write error message and ignore
+                    ''',
+                    )
+    group.addoption('--jira-disable-docs-search',
+                    action='store_false',
+                    dest='jira_docs',
+                    default=_get_bool(config, 'DEFAULT', 'docs_search', True),
+                    help='Issue ID in doc strings will be ignored'
+                    )
+    group.addoption('--jira-issue-regex',
+                    action='store',
+                    dest='jira_regex',
+                    default=_get_value(config, 'DEFAULT', 'issue_regex'),
+                    help='Replace default `[A-Z]+-[0-9]+` regular expression'
                     )
 
 
@@ -302,10 +356,16 @@ def pytest_configure(config):
             config.getvalue('jira_password'),
             config.getvalue('jira_verify'),
         )
+        jira_marker = JiraMarkerReporter(
+            config.getvalue('jira_marker_strategy'),
+            config.getvalue('jira_docs'),
+            config.getvalue('jira_regex'),
+        )
         if jira_connection.is_connected():
             # if connection to jira fails, plugin won't be loaded
             jira_plugin = JiraHooks(
                 jira_connection,
+                jira_marker,
                 config.getvalue('jira_product_version'),
                 components,
             )
