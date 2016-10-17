@@ -289,7 +289,7 @@ def test_invalid_authentification_exception(testdir):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert "JIRAError: JiraError" in result.stderr.str()
+    assert "JIRAError: " in result.stderr.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
