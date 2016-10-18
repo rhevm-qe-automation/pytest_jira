@@ -83,7 +83,7 @@ the issue will be considered **unresolved**.
 Requires
 ========
 
--  pytest >= 2.2.3
+-  pytest >= 2.2.3, < 3.0.0
 -  jira >= 0.43
 -  six
 
