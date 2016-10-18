@@ -53,13 +53,14 @@ class JiraHooks(object):
         else:
             return not self.is_affected(issue_id)
 
-    @pytest.mark.tryfirst
-    def pytest_runtest_makereport(self, item, call, __multicall__):
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_makereport(self, item, call):
         '''
         Figure out how to mark JIRA test other than SKIPPED
         '''
 
-        rep = __multicall__.execute()
+        outcome = yield
+        rep = outcome.get_result()
         try:
             jira_ids = self.mark.get_jira_issues(item)
         except Exception:
@@ -74,8 +75,6 @@ class JiraHooks(object):
                         rep.outcome = "failed"
                     rep.wasxfail = "failed"
                     break
-
-        return rep
 
     def pytest_runtest_setup(self, item):
         """
