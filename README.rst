@@ -34,41 +34,48 @@ Marking tests
 -------------
 You can specify jira issue ID in docstring or in pytest.mark.jira decorator.
 
-If you use decorator you can specify optional parameter ``run``. If it's false
-and issue is unresolved, the test will be skipped.
+By default the regular expression pattern for matching jira issue ID is ``[A-Z]+-[0-9]+``,
+it can be changed by ``--jira-issue-regex=REGEX`` or in a config file by
+``jira_regex=REGEX``.
 
-You can disable searching for issue ID in doc string by using
-``--jira-disable-docs-search`` parameter or by ``docs_search=False``
-in `jira.cfg`. It's also possible to change behavior if issue ID was not found
+It's also possible to change behavior if issue ID was not found
 by setting ``--jira-marker-strategy=STRATEGY`` or in config file
 as `marker_strategy=STRATEGY`.
 
-You can use one of following strategies:
+Strategies for dealing with issue IDs that were not found:
 
 - open - issue is considered as open (default)
 - strict - raise an exception
 - ignore - issue id is ignored
 - warn - write error message and ignore
 
-By default the regular expression patter for matching jira issue ID is `[A-Z]+-[0-9]+`,
-it can by changed by ``--jira-issue-regex=REGEX`` or in a config file by
-``jira_regex=REGEX``.
+Issue ID in decorator
+~~~~~~~~~~~~~~~~~~~~~
+If you use decorator you can specify optional parameter ``run``. If it's false
+and issue is unresolved, the test will be skipped.
 
-Example
-^^^^^^^
- .. code:: python
+.. code:: python
 
-    @pytest.mark.jira("ORG-1382", run=False)
-    def test_skip(): # will be skipped if unresolved
-        assert False
+  @pytest.mark.jira("ORG-1382", run=False)
+  def test_skip(): # will be skipped if unresolved
+      assert False
 
-    @pytest.mark.jira("ORG-1382")
-    def test_xfail(): # will run and xfail if unresolved
-        assert False
+  @pytest.mark.jira("ORG-1382")
+  def test_xfail(): # will run and xfail if unresolved
+      assert False
 
-    def test_xpass(): # will run and xpass if unresolved
-    """issue: ORG-1382"""
-        assert True
+Issue ID in docstring
+~~~~~~~~~~~~~~~~~~~~~
+
+You can disable searching for issue ID in doc string by using
+``--jira-disable-docs-search`` parameter or by ``docs_search=False``
+in `jira.cfg`.
+
+.. code:: python
+
+  def test_xpass(): # will run and xpass if unresolved
+  """issue: ORG-1382"""
+      assert True
 
 Status evaluation
 -----------------
@@ -96,7 +103,12 @@ Usage
 =====
 
 
-1. Create a ``jira.cfg`` in the root of your tests: ::
+1. Create a ``jira.cfg`` in the root of your tests:
+
+   Options can be overridden with command line options. The configuration
+   file can also be placed in ``/etc/jira.cfg`` and ``~/jira.cfg``.
+
+   .. code:: ini
 
     [DEFAULT]
     url = https://jira.atlassian.com
@@ -109,15 +121,16 @@ Usage
     # docs_search = False (disable searching for issue id in docs)
     # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
 
-   Options can be overridden with command line options. The configuration
-   file can also be placed in ``/etc/jira.cfg`` and ``~/jira.cfg``.
 
 2. Mark your tests with jira marker and issue id.
+
    ``@pytest.mark.jira('issue_id')``
 
    You can put Jira ID into doc string of test case as well.
 
-3. Run py.test with jira option to enable the plugin. ``py.test --jira``
+3. Run py.test with jira option to enable the plugin.
+
+   ``py.test --jira``
 
 .. |Build Status| image:: https://travis-ci.org/rhevm-qe-automation/pytest_jira.svg?branch=master
    :target: https://travis-ci.org/rhevm-qe-automation/pytest_jira
