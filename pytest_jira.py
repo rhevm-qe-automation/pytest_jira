@@ -16,6 +16,9 @@ import sys
 from jira.client import JIRA
 
 
+PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
+
+
 class JiraHooks(object):
     def __init__(
         self,
@@ -71,7 +74,7 @@ class JiraHooks(object):
                 if not self.is_issue_resolved(issue_id):
                     if call.excinfo:
                         rep.outcome = "skipped"
-                    else:
+                    elif PYTEST_MAJOR_VERSION < 3:
                         rep.outcome = "failed"
                     rep.wasxfail = "failed"
                     break
