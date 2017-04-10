@@ -1,7 +1,7 @@
 """
 This plugin integrates pytest with jira; allowing the tester to mark a test
-with a bug id.  The test will then be skipped unless the issue status is closed
-or resolved.
+with a bug id.  The test will then be skipped unless the issue status matches
+at least one of resolved statuses.
 
 You must set the url either at the command line or in jira.cfg.
 
@@ -17,6 +17,7 @@ from jira.client import JIRA
 
 
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
+DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
 
 
 class JiraHooks(object):
@@ -26,11 +27,16 @@ class JiraHooks(object):
         marker,
         version=None,
         components=None,
+        resolved_statuses=None,
     ):
         self.conn = connection
         self.mark = marker
         self.components = set(components) if components else None
         self.version = version
+        if resolved_statuses:
+            self.resolved_statuses = resolved_statuses
+        else:
+            self.resolved_statuses = DEFAULT_RESOLVE_STATUSES
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
@@ -51,7 +57,7 @@ class JiraHooks(object):
         if self.issue_cache[issue_id] is None:
             return True
 
-        if self.issue_cache[issue_id]['status'] in ['closed', 'resolved']:
+        if self.issue_cache[issue_id]['status'] in self.resolved_statuses:
             return self.fixed_in_version(issue_id)
         else:
             return not self.is_affected(issue_id)
@@ -330,6 +336,16 @@ def pytest_addoption(parser):
                     default=_get_value(config, 'DEFAULT', 'issue_regex'),
                     help='Replace default `[A-Z]+-[0-9]+` regular expression'
                     )
+    group.addoption('--jira-resolved-statuses',
+                    action='store',
+                    dest='jira_resolved_statuses',
+                    default=_get_value(
+                        config, 'DEFAULT', 'resolved_statuses',
+                        ','.join(DEFAULT_RESOLVE_STATUSES),
+                    ),
+                    help='Comma separated list of resolved statuses (closed, '
+                    'resolved)'
+                    )
 
 
 def pytest_configure(config):
@@ -351,6 +367,15 @@ def pytest_configure(config):
     if isinstance(components, six.string_types):
         components = [c for c in components.split(',') if c]
 
+    resolved_statuses = config.getvalue('jira_resolved_statuses')
+    if isinstance(resolved_statuses, six.string_types):
+        resolved_statuses = (
+            s.strip().lower() for s in resolved_statuses.split(',')
+            if s.strip()
+        )
+    if not resolved_statuses:
+        resolved_statuses = DEFAULT_RESOLVE_STATUSES
+
     if config.getvalue('jira') and config.getvalue('jira_url'):
         jira_connection = JiraSiteConnection(
             config.getvalue('jira_url'),
@@ -370,6 +395,7 @@ def pytest_configure(config):
                 jira_marker,
                 config.getvalue('jira_product_version'),
                 components,
+                resolved_statuses,
             )
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
             assert ok

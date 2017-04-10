@@ -20,6 +20,12 @@ FAKE_ISSUES = {
         "fixVersions": set(),
         "status": "open",
     },
+    "ORG-1512": {
+        "components": set(),
+        "versions": set(),
+        "fixed_versions": set(),
+        "status": "custom-status",
+    },
     "ORG-1501": {
         "components": set(),
         "versions": set(["foo-0.1", "foo-0.2"]),
@@ -551,3 +557,67 @@ def test_invalid_jira_marker_strategy_parameter(testdir):
         '--jira-marker-strategy',  'invalid',
     )
     assert "invalid choice: \'invalid\'" in result.stderr.str()
+
+
+def test_custom_resolve_status_fail(testdir):
+    '''
+    Test case matches custom status and do not skip it because it is considered
+    as closed, in additional test fails because of some regression.
+    '''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1512", run=True)
+        def test_fail():
+            assert False  # some regression
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-resolved-statuses', 'custom-status',
+    )
+    assert_outcomes(result, 0, 0, 1)
+
+
+def test_custom_resolve_status_pass(testdir):
+    '''
+    Test case matches custom status and do not skip it because it is considered
+    as closed, in additional test passes.
+    '''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1512", run=True)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-resolved-statuses', 'custom-status',
+    )
+    assert_outcomes(result, 1, 0, 0)
+
+
+def test_custom_resolve_status_skipped_on_closed_status(testdir):
+    '''
+    Test case is marked by issue with status 'closed' which is one of defaults
+    resolved statuses. But test-case gets skipped because custom resolved
+    statuses are set.
+    '''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1501", run=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-resolved-statuses', 'custom-status,some-other',
+    )
+    assert_outcomes(result, 0, 1, 0)

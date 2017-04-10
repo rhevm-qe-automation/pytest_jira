@@ -79,7 +79,13 @@ in `jira.cfg`.
 
 Status evaluation
 -----------------
-Issues are consider **resolved** if their status is "Resolved" or "Closed".
+
+Issues are considered as **resolved** if their status matches
+``resolved_statuses``. By default it is ``Resolved`` or ``Closed``.
+
+You can set your own custom resolved statuses on command line
+``--jira-resolved-statuses``, or in config file.
+
 If you specify components (in command line or jira.cfg), open issues will be considered
 **unresolved** only if they are also open for at least one used component.
 
@@ -120,6 +126,7 @@ Usage
     # strategy = [open|strict|warn|ignore] (dealing with not found issues)
     # docs_search = False (disable searching for issue id in docs)
     # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
+    # resolved_statuses = comma separated list of statuses (closed, resolved)
 
 
 2. Mark your tests with jira marker and issue id.
