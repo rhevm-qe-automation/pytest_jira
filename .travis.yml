@@ -10,3 +10,11 @@ script:
     - tox
 after_success:
     - codecov
+deploy:
+  provider: pypi
+  user: "lukas-bednar"
+  password:
+    secure: "ks4q6t0YBc4i3hr5uYCepUi05SuBfkA6l2vakuqcQunuwClaCN3ryP5aKCKk3673wdKBh2eeL+VrKrmEnyRTrgo+t02ODSibAMeytwq254m526FiUbATemNrDyPtv7XTO/Yp9yFPwHbpoH8bdTa4MhTUm6qXcRtRdYvfU8zVKUU="
+  on:
+    branch: master
+    tags: true
