@@ -18,3 +18,4 @@ deploy:
   on:
     branch: master
     tags: true
+  skip_upload_docs: true
