@@ -139,6 +139,15 @@ Usage
 
    ``py.test --jira``
 
+Tests
+=====
+
+In order to execute tests run
+
+.. code:: sh
+
+  $ tox
+
 .. |Build Status| image:: https://travis-ci.org/rhevm-qe-automation/pytest_jira.svg?branch=master
    :target: https://travis-ci.org/rhevm-qe-automation/pytest_jira
 .. |Code Health| image:: https://landscape.io/github/rhevm-qe-automation/pytest_jira/master/landscape.svg?style=flat
