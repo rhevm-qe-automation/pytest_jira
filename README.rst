@@ -40,14 +40,14 @@ it can be changed by ``--jira-issue-regex=REGEX`` or in a config file by
 
 It's also possible to change behavior if issue ID was not found
 by setting ``--jira-marker-strategy=STRATEGY`` or in config file
-as `marker_strategy=STRATEGY`.
+as ``marker_strategy=STRATEGY``.
 
 Strategies for dealing with issue IDs that were not found:
 
-- open - issue is considered as open (default)
-- strict - raise an exception
-- ignore - issue id is ignored
-- warn - write error message and ignore
+- **open** - issue is considered as open (default)
+- **strict** - raise an exception
+- **ignore** - issue id is ignored
+- **warn** - write error message and ignore
 
 Issue ID in decorator
 ~~~~~~~~~~~~~~~~~~~~~
@@ -69,7 +69,7 @@ Issue ID in docstring
 
 You can disable searching for issue ID in doc string by using
 ``--jira-disable-docs-search`` parameter or by ``docs_search=False``
-in `jira.cfg`.
+in ``jira.cfg``.
 
 .. code:: python
 
@@ -109,25 +109,40 @@ Usage
 =====
 
 
-1. Create a ``jira.cfg`` in the root of your tests:
+1. Create a ``jira.cfg`` and put it at least in one of following places.
 
-   Options can be overridden with command line options. The configuration
-   file can also be placed in ``/etc/jira.cfg`` and ``~/jira.cfg``.
+   * /etc/jira.cfg
+   * ~/jira.cfg
+   * tests\_root\_dir/jira.cfg
+
+   The configuration file is loaded in that order meantioned above.
+   That means that first options from global configuration are loaded,
+   and might be overwritten by options from user's home directory and
+   finally these might be overwritten by options from test's root directory.
+
+   See example bellow, you can use it as tempate, and update it according
+   to your needs.
 
    .. code:: ini
 
-    [DEFAULT]
-    url = https://jira.atlassian.com
-    username = USERNAME (or blank for no authentication
-    password = PASSWORD (or blank for no authentication)
-    # ssl_verification = True/False
-    # version = foo-1.0
-    # components = com1,second component,com3
-    # strategy = [open|strict|warn|ignore] (dealing with not found issues)
-    # docs_search = False (disable searching for issue id in docs)
-    # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
-    # resolved_statuses = comma separated list of statuses (closed, resolved)
+     [DEFAULT]
+     url = https://jira.atlassian.com
+     username = USERNAME (or blank for no authentication
+     password = PASSWORD (or blank for no authentication)
+     # ssl_verification = True/False
+     # version = foo-1.0
+     # components = com1,second component,com3
+     # strategy = [open|strict|warn|ignore] (dealing with not found issues)
+     # docs_search = False (disable searching for issue id in docs)
+     # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
+     # resolved_statuses = comma separated list of statuses (closed, resolved)
 
+   Configuration options can be overridden with command line options as well.
+   For all available command line options run following command.
+   
+   .. code:: sh
+   
+     py.test --help
 
 2. Mark your tests with jira marker and issue id.
 

@@ -276,13 +276,13 @@ def pytest_addoption(parser):
                     dest='jira_url',
                     default=_get_value(config, 'DEFAULT', 'url'),
                     metavar='url',
-                    help='JIRA url (default: %default)')
+                    help='JIRA url (default: %(default)s)')
     group.addoption('--jira-user',
                     action='store',
                     dest='jira_username',
                     default=_get_value(config, 'DEFAULT', 'username'),
                     metavar='username',
-                    help='JIRA username (default: %default)')
+                    help='JIRA username (default: %(default)s)')
     group.addoption('--jira-password',
                     action='store',
                     dest='jira_password',
