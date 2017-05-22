@@ -30,6 +30,10 @@ Test results
    -  the test is executed and based on it
       the result is **passed** or **failed**
 
+**NOTE:** You can set default value for ``run`` parameter globally in config
+file (option ``run_test_case``) or from CLI
+``--jira-do-not-run-test-case``. Default value is ``run=True``.
+
 Marking tests
 -------------
 You can specify jira issue ID in docstring or in pytest.mark.jira decorator.
@@ -136,6 +140,7 @@ Usage
      # docs_search = False (disable searching for issue id in docs)
      # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
      # resolved_statuses = comma separated list of statuses (closed, resolved)
+     # run_test_case = True (default value for 'run' parameter)
 
    Configuration options can be overridden with command line options as well.
    For all available command line options run following command.

@@ -18,6 +18,7 @@ from jira.client import JIRA
 
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
+DEFAULT_RUN_TEST_CASE = True
 
 
 class JiraHooks(object):
@@ -28,6 +29,7 @@ class JiraHooks(object):
         version=None,
         components=None,
         resolved_statuses=None,
+        run_test_case=DEFAULT_RUN_TEST_CASE,
     ):
         self.conn = connection
         self.mark = marker
@@ -37,6 +39,7 @@ class JiraHooks(object):
             self.resolved_statuses = resolved_statuses
         else:
             self.resolved_statuses = DEFAULT_RESOLVE_STATUSES
+        self.run_test_case = run_test_case
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
@@ -92,7 +95,7 @@ class JiraHooks(object):
           * AND jira_run is False
         :param item: test being run.
         """
-        jira_run = True
+        jira_run = self.run_test_case
         if 'jira' in item.keywords:
             jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
         jira_ids = self.mark.get_jira_issues(item)
@@ -346,6 +349,16 @@ def pytest_addoption(parser):
                     help='Comma separated list of resolved statuses (closed, '
                     'resolved)'
                     )
+    group.addoption('--jira-do-not-run-test-case',
+                    action='store_false',
+                    dest='jira_run_test_case',
+                    default=_get_bool(
+                        config, 'DEFAULT', 'run_test_case',
+                        DEFAULT_RUN_TEST_CASE,
+                    ),
+                    help='If set and test is marked by Jira plugin, such '
+                    'test case is not executed.'
+                    )
 
 
 def pytest_configure(config):
@@ -396,6 +409,7 @@ def pytest_configure(config):
                 config.getvalue('jira_product_version'),
                 components,
                 resolved_statuses,
+                config.getvalue('jira_run_test_case'),
             )
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
             assert ok
