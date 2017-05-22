@@ -621,3 +621,64 @@ def test_custom_resolve_status_skipped_on_closed_status(testdir):
         '--jira-resolved-statuses', 'custom-status,some-other',
     )
     assert_outcomes(result, 0, 1, 0)
+
+
+def test_run_test_case_false1(testdir):
+    '''Test case shouldn't get executed'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.cfg',
+        jira="\n".join([
+            '[DEFAULT]',
+            'run_test_case = False',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382")
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, passed=0, skipped=1, failed=0, error=0)
+
+
+def test_run_test_case_false2(testdir):
+    '''Test case shouldn't get executed'''
+    testdir.makeconftest(CONFTEST)
+    plugin_args = (
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        '--jira-do-not-run-test-case',
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382")
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*plugin_args)
+    assert_outcomes(result, passed=0, skipped=1, failed=0, error=0)
+
+
+def test_run_test_case_true1(testdir):
+    '''Test case should get executed'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.cfg',
+        jira="\n".join([
+            '[DEFAULT]',
+            'run_test_case = True',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382")
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, passed=0, skipped=0, failed=0, error=0, xfailed=1)
