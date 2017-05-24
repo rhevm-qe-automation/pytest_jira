@@ -101,7 +101,7 @@ Requires
 ========
 
 -  pytest >= 2.2.3
--  jira >= 0.43
+-  requests >= 2.13.0
 -  six
 
 Installation
