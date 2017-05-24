@@ -15,21 +15,25 @@ import pytest
 import sys
 from jira.client import JIRA
 
-
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
 DEFAULT_RUN_TEST_CASE = True
+DEFAULT_CONFIG_PATHS = [
+    '/etc/jira.cfg',
+    os.path.expanduser('~/jira.cfg'),
+    'jira.cfg',
+]
 
 
 class JiraHooks(object):
     def __init__(
-        self,
-        connection,
-        marker,
-        version=None,
-        components=None,
-        resolved_statuses=None,
-        run_test_case=DEFAULT_RUN_TEST_CASE,
+            self,
+            connection,
+            marker,
+            version=None,
+            components=None,
+            resolved_statuses=None,
+            run_test_case=DEFAULT_RUN_TEST_CASE,
     ):
         self.conn = connection
         self.mark = marker
@@ -145,10 +149,10 @@ class JiraHooks(object):
 
 class JiraSiteConnection(object):
     def __init__(
-        self, url,
-        username=None,
-        password=None,
-        verify=True,
+            self, url,
+            username=None,
+            password=None,
+            verify=True,
     ):
         self.url = url
         self.username = username
@@ -266,13 +270,7 @@ def pytest_addoption(parser):
 
     # FIXME - Change to a credentials.yaml ?
     config = six.moves.configparser.ConfigParser()
-    config.read(
-        [
-            '/etc/jira.cfg',
-            os.path.expanduser('~/jira.cfg'),
-            'jira.cfg',
-        ]
-    )
+    config.read(DEFAULT_CONFIG_PATHS)
 
     group.addoption('--jira-url',
                     action='store',
@@ -347,7 +345,7 @@ def pytest_addoption(parser):
                         ','.join(DEFAULT_RESOLVE_STATUSES),
                     ),
                     help='Comma separated list of resolved statuses (closed, '
-                    'resolved)'
+                         'resolved)'
                     )
     group.addoption('--jira-do-not-run-test-case',
                     action='store_false',
@@ -357,7 +355,7 @@ def pytest_addoption(parser):
                         DEFAULT_RUN_TEST_CASE,
                     ),
                     help='If set and test is marked by Jira plugin, such '
-                    'test case is not executed.'
+                         'test case is not executed.'
                     )
 
 
