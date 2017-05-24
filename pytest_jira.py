@@ -10,10 +10,12 @@ Author: James Laska
 
 import os
 import re
-import six
-import pytest
 import sys
-from jira.client import JIRA
+
+import pytest
+import requests
+import six
+from requests.exceptions import RequestException
 
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
@@ -161,30 +163,37 @@ class JiraSiteConnection(object):
 
         # Setup basic_auth
         if self.username and self.password:
-            basic_auth = (self.username, self.password)
+            self.basic_auth = (self.username, self.password)
         else:
-            basic_auth = None
+            self.basic_auth = None
 
-        # TODO - use requests REST API instead to drop a dependency
-        # (https://confluence.atlassian.com/display/DOCSPRINT/
-        # The+Simplest+Possible+JIRA+REST+Examples)
-        self.jira = JIRA(
-            options=dict(server=self.url, verify=self.verify),
-            basic_auth=basic_auth,
-            validate=bool(basic_auth),
-            max_retries=1
-        )
+    def _jira_request(self, url, method='get', **kwargs):
+        if self.basic_auth:
+            return requests.request(method, url, auth=self.basic_auth, **kwargs)
+        else:
+            return requests.request(method, url, **kwargs)
+
+    def check_connection(self):
+        auth_url = '{url}/rest/auth/1/session'.format(url=self.url)
+        try:
+            r = self._jira_request(auth_url)
+            r.raise_for_status()
+            return True
+        except RequestException:
+            return False
 
     def is_connected(self):
-        return self.jira is not None
+        return self.check_connection()
 
     def get_issue(self, issue_id):
-        field = self.jira.issue(issue_id).fields
+        issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(url=self.url, issue_id=issue_id)
+        issue = self._jira_request(issue_url).json()
+        field = issue['fields']
         return {
-            'components': set(c.name for c in field.components),
-            'versions': set(v.name for v in field.versions),
-            'fixed_versions': set(v.name for v in field.fixVersions),
-            'status': field.status.name.lower(),
+            'components': set(c['name'] for c in field['components']),
+            'versions': set(v['name'] for v in field['versions']),
+            'fixed_versions': set(v['name'] for v in field['fixVersions']),
+            'status': field['status']['name'].lower(),
         }
 
     def get_url(self):
