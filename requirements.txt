@@ -1,4 +1,3 @@
 pytest>=2.2.4
-jira>=0.43
 six
 ordereddict; python_version=='2.6'
