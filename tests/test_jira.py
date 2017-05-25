@@ -301,7 +301,7 @@ def test_invalid_authentication_exception(testdir):
     (400), (401), (403), (404), (500), (501), (503)
 ])
 def test_request_exception(testdir, status_code):
-    """Failed authentication, exception should be raised"""
+    """HTTP Error when trying to connect"""
     testdir.makepyfile("""
         import pytest
 
