@@ -310,7 +310,7 @@ def test_request_exception(testdir, status_code):
     """)
     ARGS = (
         '--jira',
-        '--jira-url', 'https://httpbin.org/status/{status_code}'.format(
+        '--jira-url', 'http://httpbin.org/status/{status_code}'.format(
             status_code=status_code
         ),
         '--jira-user', 'user123',
