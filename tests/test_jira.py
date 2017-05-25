@@ -1,4 +1,5 @@
 import os
+import pytest
 
 CONFTEST = """
 import pytest
@@ -294,6 +295,29 @@ def test_invalid_authentication_exception(testdir):
     )
     result = testdir.runpytest(*ARGS)
     assert "Invalid credentials" in result.stderr.str()
+
+
+@pytest.mark.parametrize("status_code", [
+    (400), (401), (403), (404), (500), (501), (503)
+])
+def test_request_exception(testdir, status_code):
+    """Failed authentication, exception should be raised"""
+    testdir.makepyfile("""
+        import pytest
+
+        def test_pass():
+            pass
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', 'https://httpbin.org/status/{status_code}'.format(
+            status_code=status_code
+        ),
+        '--jira-user', 'user123',
+        '--jira-password', 'passwd123'
+    )
+    result = testdir.runpytest(*ARGS)
+    assert "requests.exceptions" in result.stderr.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
