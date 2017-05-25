@@ -178,8 +178,8 @@ class JiraSiteConnection(object):
             r.raise_for_status()
             if not r.text:
                 raise Exception(
-                    'Could not connect to {}. Invalid credentials'
-                        .format(self.url))
+                    'Could not connect to {}. Invalid credentials'.format(
+                        self.url))
             return r.json()['permissions']['BROWSE']['havePermission']
         except RequestException:
             return False
