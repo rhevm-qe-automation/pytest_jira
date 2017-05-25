@@ -317,7 +317,7 @@ def test_request_exception(testdir, status_code):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert "requests.exceptions" in result.stderr.str()
+    assert "HTTPError" in result.stderr.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
