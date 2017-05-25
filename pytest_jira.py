@@ -51,10 +51,10 @@ class JiraHooks(object):
         self.issue_cache = dict()
 
     def is_issue_resolved(self, issue_id):
-        '''
+        """
         Returns whether the provided issue ID is resolved (True|False).  Will
         cache issues to speed up subsequent calls for the same issue.
-        '''
+        """
         # Access Jira issue (may be cached)
         if issue_id not in self.issue_cache:
             try:
@@ -73,9 +73,9 @@ class JiraHooks(object):
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(self, item, call):
-        '''
+        """
         Figure out how to mark JIRA test other than SKIPPED
-        '''
+        """
 
         outcome = yield
         rep = outcome.get_result()
@@ -112,12 +112,12 @@ class JiraHooks(object):
                 pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
 
     def fixed_in_version(self, issue_id):
-        '''
+        """
         Return True if:
             jira_product_version was not specified
             OR issue was fixed for jira_product_version
         else return False
-        '''
+        """
         if not self.version:
             return True
         affected = self.issue_cache[issue_id].get('versions', set())
@@ -125,12 +125,12 @@ class JiraHooks(object):
         return self.version not in (affected - fixed)
 
     def is_affected(self, issue_id):
-        '''
+        """
         Return True if:
             at least one component affected (or not specified)
             version is affected (or not specified)
         else return False
-        '''
+        """
         return (
             self._affected_version(issue_id) and
             self._affected_components(issue_id)
@@ -174,11 +174,12 @@ class JiraSiteConnection(object):
             return requests.request(method, url, **kwargs)
 
     def check_connection(self):
-        auth_url = '{url}/rest/auth/1/session'.format(url=self.url)
+        # This URL work for both anonymous and logged in users
+        auth_url = '{url}/rest/ap2/2/mypermissions'.format(url=self.url)
         try:
             r = self._jira_request(auth_url)
             r.raise_for_status()
-            return True
+            return r.json()['permissions']['BROWSE']['havePermission']
         except RequestException:
             return False
 
@@ -327,12 +328,12 @@ def pytest_addoption(parser):
                         config, 'DEFAULT', 'marker_strategy', 'open'
                     ),
                     choices=['open', 'strict', 'ignore', 'warn'],
-                    help='''Action if issue ID was not found
+                    help="""Action if issue ID was not found
                     open - issue is considered as open (default)
                     strict - raise an exception
                     ignore - issue id is ignored
                     warn - write error message and ignore
-                    ''',
+                    """,
                     )
     group.addoption('--jira-disable-docs-search',
                     action='store_false',
