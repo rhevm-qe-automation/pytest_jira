@@ -8,14 +8,14 @@ FAKE_ISSUES = {
     "ORG-1412": {"status": "closed"},
     "ORG-1382": {"status": "open"},
     "ORG-1510": {
-        "components": {"com1", "com2"},
+        "components": set(["com1", "com2"]),
         "versions": set(),
         "fixed_versions": set(),
         "status": "open",
     },
     "ORG-1511": {
-        "components": {"com1", "com2"},
-        "versions": {"foo-0.1", "foo-0.2"},
+        "components": set(["com1", "com2"]),
+        "versions": set(["foo-0.1", "foo-0.2"]),
         "fixVersions": set(),
         "status": "open",
     },
@@ -27,8 +27,8 @@ FAKE_ISSUES = {
     },
     "ORG-1501": {
         "components": set(),
-        "versions": {"foo-0.1", "foo-0.2"},
-        "fixed_versions": {"foo-0.2"},
+        "versions": set(["foo-0.1", "foo-0.2"]),
+        "fixed_versions": set(["foo-0.2"]),
         "status": "closed",
     },
 }
