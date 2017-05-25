@@ -164,7 +164,9 @@ class JiraSiteConnection(object):
 
     def _jira_request(self, url, method='get', **kwargs):
         if self.basic_auth:
-            return requests.request(method, url, auth=self.basic_auth, **kwargs)
+            return requests.request(
+                method, url, auth=self.basic_auth, **kwargs
+            )
         else:
             return requests.request(method, url, **kwargs)
 
@@ -175,7 +177,9 @@ class JiraSiteConnection(object):
             r = self._jira_request(auth_url)
             r.raise_for_status()
             if not r.text:
-                raise Exception('Could not connect to {}. Invalid credentials'.format(self.url))
+                raise Exception(
+                    'Could not connect to {}. Invalid credentials'
+                        .format(self.url))
             return r.json()['permissions']['BROWSE']['havePermission']
         except RequestException:
             return False
@@ -184,7 +188,9 @@ class JiraSiteConnection(object):
         return self.check_connection()
 
     def get_issue(self, issue_id):
-        issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(url=self.url, issue_id=issue_id)
+        issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
+            url=self.url, issue_id=issue_id
+        )
         issue = self._jira_request(issue_url).json()
         field = issue['fields']
         return {
