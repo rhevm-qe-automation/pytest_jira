@@ -20,11 +20,6 @@ from requests.exceptions import RequestException
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
 DEFAULT_RUN_TEST_CASE = True
-DEFAULT_CONFIG_PATHS = [
-    '/etc/jira.cfg',
-    os.path.expanduser('~/jira.cfg'),
-    'jira.cfg',
-]
 
 
 class JiraHooks(object):
@@ -175,10 +170,12 @@ class JiraSiteConnection(object):
 
     def check_connection(self):
         # This URL work for both anonymous and logged in users
-        auth_url = '{url}/rest/ap2/2/mypermissions'.format(url=self.url)
+        auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
         try:
             r = self._jira_request(auth_url)
             r.raise_for_status()
+            if not r.text:
+                raise Exception('Could not connect to {}. Invalid credentials'.format(self.url))
             return r.json()['permissions']['BROWSE']['havePermission']
         except RequestException:
             return False
@@ -280,7 +277,11 @@ def pytest_addoption(parser):
 
     # FIXME - Change to a credentials.yaml ?
     config = six.moves.configparser.ConfigParser()
-    config.read(DEFAULT_CONFIG_PATHS)
+    config.read([
+        '/etc/jira.cfg',
+        os.path.expanduser('~/jira.cfg'),
+        'jira.cfg',
+    ])
 
     group.addoption('--jira-url',
                     action='store',
