@@ -15,7 +15,6 @@ import sys
 import pytest
 import requests
 import six
-from requests.exceptions import RequestException
 
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
