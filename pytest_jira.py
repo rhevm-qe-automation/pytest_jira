@@ -10,11 +10,11 @@ Author: James Laska
 
 import os
 import re
-import six
-import pytest
 import sys
-from jira.client import JIRA
 
+import pytest
+import requests
+import six
 
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
@@ -23,13 +23,13 @@ DEFAULT_RUN_TEST_CASE = True
 
 class JiraHooks(object):
     def __init__(
-        self,
-        connection,
-        marker,
-        version=None,
-        components=None,
-        resolved_statuses=None,
-        run_test_case=DEFAULT_RUN_TEST_CASE,
+            self,
+            connection,
+            marker,
+            version=None,
+            components=None,
+            resolved_statuses=None,
+            run_test_case=DEFAULT_RUN_TEST_CASE,
     ):
         self.conn = connection
         self.mark = marker
@@ -45,10 +45,10 @@ class JiraHooks(object):
         self.issue_cache = dict()
 
     def is_issue_resolved(self, issue_id):
-        '''
+        """
         Returns whether the provided issue ID is resolved (True|False).  Will
         cache issues to speed up subsequent calls for the same issue.
-        '''
+        """
         # Access Jira issue (may be cached)
         if issue_id not in self.issue_cache:
             try:
@@ -67,9 +67,9 @@ class JiraHooks(object):
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(self, item, call):
-        '''
+        """
         Figure out how to mark JIRA test other than SKIPPED
-        '''
+        """
 
         outcome = yield
         rep = outcome.get_result()
@@ -106,12 +106,12 @@ class JiraHooks(object):
                 pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
 
     def fixed_in_version(self, issue_id):
-        '''
+        """
         Return True if:
             jira_product_version was not specified
             OR issue was fixed for jira_product_version
         else return False
-        '''
+        """
         if not self.version:
             return True
         affected = self.issue_cache[issue_id].get('versions', set())
@@ -119,12 +119,12 @@ class JiraHooks(object):
         return self.version not in (affected - fixed)
 
     def is_affected(self, issue_id):
-        '''
+        """
         Return True if:
             at least one component affected (or not specified)
             version is affected (or not specified)
         else return False
-        '''
+        """
         return (
             self._affected_version(issue_id) and
             self._affected_components(issue_id)
@@ -145,10 +145,10 @@ class JiraHooks(object):
 
 class JiraSiteConnection(object):
     def __init__(
-        self, url,
-        username=None,
-        password=None,
-        verify=True,
+            self, url,
+            username=None,
+            password=None,
+            verify=True,
     ):
         self.url = url
         self.username = username
@@ -157,30 +157,54 @@ class JiraSiteConnection(object):
 
         # Setup basic_auth
         if self.username and self.password:
-            basic_auth = (self.username, self.password)
+            self.basic_auth = (self.username, self.password)
         else:
-            basic_auth = None
+            self.basic_auth = None
 
-        # TODO - use requests REST API instead to drop a dependency
-        # (https://confluence.atlassian.com/display/DOCSPRINT/
-        # The+Simplest+Possible+JIRA+REST+Examples)
-        self.jira = JIRA(
-            options=dict(server=self.url, verify=self.verify),
-            basic_auth=basic_auth,
-            validate=bool(basic_auth),
-            max_retries=1
-        )
+    def _jira_request(self, url, method='get', **kwargs):
+        if self.basic_auth:
+            return requests.request(
+                method, url, auth=self.basic_auth, **kwargs
+            )
+        else:
+            return requests.request(method, url, **kwargs)
+
+    def check_connection(self):
+        # This URL work for both anonymous and logged in users
+        auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
+        r = self._jira_request(auth_url)
+        # Handle connection errors
+        r.raise_for_status()
+
+        # For some reason in case on invalid credentials the status is still
+        # 200 but the body is empty
+        if not r.text:
+            raise Exception(
+                'Could not connect to {url}. Invalid credentials'.format(
+                    url=self.url)
+            )
+
+        # If the user does not have sufficient permissions to browse issues
+        elif not r.json()['permissions']['BROWSE']['havePermission']:
+            raise Exception('Current user does not have sufficient permissions'
+                            ' to view issue')
+        else:
+            return True
 
     def is_connected(self):
-        return self.jira is not None
+        return self.check_connection()
 
     def get_issue(self, issue_id):
-        field = self.jira.issue(issue_id).fields
+        issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
+            url=self.url, issue_id=issue_id
+        )
+        issue = self._jira_request(issue_url).json()
+        field = issue['fields']
         return {
-            'components': set(c.name for c in field.components),
-            'versions': set(v.name for v in field.versions),
-            'fixed_versions': set(v.name for v in field.fixVersions),
-            'status': field.status.name.lower(),
+            'components': set(c['name'] for c in field['components']),
+            'versions': set(v['name'] for v in field['versions']),
+            'fixed_versions': set(v['name'] for v in field['fixVersions']),
+            'status': field['status']['name'].lower(),
         }
 
     def get_url(self):
@@ -266,13 +290,11 @@ def pytest_addoption(parser):
 
     # FIXME - Change to a credentials.yaml ?
     config = six.moves.configparser.ConfigParser()
-    config.read(
-        [
-            '/etc/jira.cfg',
-            os.path.expanduser('~/jira.cfg'),
-            'jira.cfg',
-        ]
-    )
+    config.read([
+        '/etc/jira.cfg',
+        os.path.expanduser('~/jira.cfg'),
+        'jira.cfg',
+    ])
 
     group.addoption('--jira-url',
                     action='store',
@@ -320,12 +342,12 @@ def pytest_addoption(parser):
                         config, 'DEFAULT', 'marker_strategy', 'open'
                     ),
                     choices=['open', 'strict', 'ignore', 'warn'],
-                    help='''Action if issue ID was not found
+                    help="""Action if issue ID was not found
                     open - issue is considered as open (default)
                     strict - raise an exception
                     ignore - issue id is ignored
                     warn - write error message and ignore
-                    ''',
+                    """,
                     )
     group.addoption('--jira-disable-docs-search',
                     action='store_false',
@@ -347,7 +369,7 @@ def pytest_addoption(parser):
                         ','.join(DEFAULT_RESOLVE_STATUSES),
                     ),
                     help='Comma separated list of resolved statuses (closed, '
-                    'resolved)'
+                         'resolved)'
                     )
     group.addoption('--jira-do-not-run-test-case',
                     action='store_false',
@@ -357,7 +379,7 @@ def pytest_addoption(parser):
                         DEFAULT_RUN_TEST_CASE,
                     ),
                     help='If set and test is marked by Jira plugin, such '
-                    'test case is not executed.'
+                         'test case is not executed.'
                     )
 
 

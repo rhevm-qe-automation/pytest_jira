@@ -1,5 +1,5 @@
 import os
-
+import pytest
 
 CONFTEST = """
 import pytest
@@ -42,7 +42,6 @@ def pytest_collection_modifyitems(session, config, items):
     plug.issue_cache.update(FAKE_ISSUES)
 """
 
-
 PLUGIN_ARGS = (
     '--jira',
     '--jira-url', 'https://issues.jboss.org',
@@ -50,7 +49,7 @@ PLUGIN_ARGS = (
 
 
 def assert_outcomes(
-    result, passed, skipped, failed, error=0, xpassed=0, xfailed=0
+        result, passed, skipped, failed, error=0, xpassed=0, xfailed=0
 ):
     outcomes = result.parseoutcomes()
     assert outcomes.get("passed", 0) == passed
@@ -100,7 +99,7 @@ def test_jira_marker_bad_args2(testdir):
 
 
 def test_jira_marker_no_run(testdir):
-    '''Expected skip due to run=False'''
+    """Expected skip due to run=False"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -114,7 +113,7 @@ def test_jira_marker_no_run(testdir):
 
 
 def test_open_jira_marker_pass(testdir):
-    '''Expected skip due to unresolved JIRA'''
+    """Expected skip due to unresolved JIRA"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -128,7 +127,7 @@ def test_open_jira_marker_pass(testdir):
 
 
 def test_open_jira_docstr_pass(testdir):
-    '''Expected skip due to unresolved JIRA Issue %s'''
+    """Expected skip due to unresolved JIRA Issue %s"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         def test_pass():
@@ -142,7 +141,7 @@ def test_open_jira_docstr_pass(testdir):
 
 
 def test_open_jira_marker_fail(testdir):
-    '''Expected skip due to unresolved JIRA'''
+    """Expected skip due to unresolved JIRA"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -156,7 +155,7 @@ def test_open_jira_marker_fail(testdir):
 
 
 def test_open_jira_docstr_fail(testdir):
-    '''Expected skip due to unresolved JIRA Issue %s'''
+    """Expected skip due to unresolved JIRA Issue %s"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         def test_fail():
@@ -170,7 +169,7 @@ def test_open_jira_docstr_fail(testdir):
 
 
 def test_closed_jira_marker_pass(testdir):
-    '''Expected PASS due to resolved JIRA Issue'''
+    """Expected PASS due to resolved JIRA Issue"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -184,7 +183,7 @@ def test_closed_jira_marker_pass(testdir):
 
 
 def test_closed_jira_docstr_pass(testdir):
-    '''Expected PASS due to resolved JIRA Issue %s'''
+    """Expected PASS due to resolved JIRA Issue %s"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         def test_fail():
@@ -211,7 +210,7 @@ def test_closed_jira_marker_fail(testdir):
 
 
 def test_closed_jira_docstr_fail(testdir):
-    '''Expected xfail due to resolved JIRA Issue %s'''
+    """Expected xfail due to resolved JIRA Issue %s"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         def test_fail():
@@ -248,7 +247,7 @@ def test_fail_without_jira_marker(testdir):
 
 
 def test_fail_without_jira_docstr(testdir):
-    '''docstring with no jira issue'''
+    """docstring with no jira issue"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         def test_pass():
@@ -262,7 +261,7 @@ def test_fail_without_jira_docstr(testdir):
 
 
 def test_invalid_configuration_exception(testdir):
-    '''Invalid option in config file, exception should be rised'''
+    """Invalid option in config file, exception should be rised"""
     testdir.makefile(
         '.cfg',
         jira="\n".join([
@@ -280,8 +279,8 @@ def test_invalid_configuration_exception(testdir):
     assert "ValueError: Not a boolean: something" in result.stderr.str()
 
 
-def test_invalid_authentification_exception(testdir):
-    '''Failed authentication, exception should be rised'''
+def test_invalid_authentication_exception(testdir):
+    """Failed authentication, exception should be raised"""
     testdir.makepyfile("""
         import pytest
 
@@ -295,11 +294,34 @@ def test_invalid_authentification_exception(testdir):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert "JIRAError: " in result.stderr.str()
+    assert "Invalid credentials" in result.stderr.str()
+
+
+@pytest.mark.parametrize("status_code", [
+    (400), (401), (403), (404), (500), (501), (503)
+])
+def test_request_exception(testdir, status_code):
+    """HTTP Error when trying to connect"""
+    testdir.makepyfile("""
+        import pytest
+
+        def test_pass():
+            pass
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', 'http://httpbin.org/status/{status_code}'.format(
+            status_code=status_code
+        ),
+        '--jira-user', 'user123',
+        '--jira-password', 'passwd123'
+    )
+    result = testdir.runpytest(*ARGS)
+    assert "HTTPError" in result.stderr.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
-    '''Expected PASS due to resolved JIRA Issue'''
+    """Expected PASS due to resolved JIRA Issue"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -321,7 +343,7 @@ def test_disabled_ssl_verification_pass(testdir):
 
 
 def test_config_file_paths_xfail(testdir):
-    '''Jira url set in ~/jira.cfg'''
+    """Jira url set in ~/jira.cfg"""
     testdir.makeconftest(CONFTEST)
     homedir = testdir.mkdir('home')
     os.environ['HOME'] = os.getcwd() + '/home'
@@ -341,7 +363,7 @@ def test_config_file_paths_xfail(testdir):
 
 
 def test_closed_for_different_version_skipped(testdir):
-    '''Skiped, closed for different version'''
+    """Skiped, closed for different version"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -363,7 +385,7 @@ def test_closed_for_different_version_skipped(testdir):
 
 
 def test_open_for_different_version_failed(testdir):
-    '''Failed, open for different version'''
+    """Failed, open for different version"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -385,20 +407,20 @@ def test_open_for_different_version_failed(testdir):
 
 
 def test_get_issue_info_from_remote_passed(testdir):
-        testdir.makeconftest(CONFTEST)
-        testdir.makepyfile("""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
             def test_pass():
                 \"\"\"
                 XNIO-250
                 \"\"\"
                 assert True
         """)
-        result = testdir.runpytest(*PLUGIN_ARGS)
-        result.assert_outcomes(1, 0, 0)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(1, 0, 0)
 
 
 def test_affected_component_skiped(testdir):
-    '''Skiped, affected component'''
+    """Skiped, affected component"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -419,7 +441,7 @@ def test_affected_component_skiped(testdir):
 
 
 def test_strategy_ignore_failed(testdir):
-    '''Invalid issue ID is ignored and test failes'''
+    """Invalid issue ID is ignored and test failes"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -442,7 +464,7 @@ def test_strategy_ignore_failed(testdir):
 
 
 def test_strategy_strict_exception(testdir):
-    '''Invalid issue ID, exception is rised'''
+    """Invalid issue ID, exception is rised"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -457,13 +479,13 @@ def test_strategy_strict_exception(testdir):
         '--jira',
         '--jira-url', 'https://issues.jboss.org',
         '--jira-marker-strategy', 'strict',
-        '--jira-issue-regex',  '[0-9]+-[0-9]+',
+        '--jira-issue-regex', '[0-9]+-[0-9]+',
     )
     assert "89745-1412789456148865" in result.stdout.str()
 
 
 def test_strategy_warn_fail(testdir):
-    '''Invalid issue ID is ignored and warning is written'''
+    """Invalid issue ID is ignored and warning is written"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -486,7 +508,7 @@ def test_strategy_warn_fail(testdir):
 
 
 def test_ignored_docs_marker_fail(testdir):
-    '''Issue is open but docs is ignored'''
+    """Issue is open but docs is ignored"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -507,7 +529,7 @@ def test_ignored_docs_marker_fail(testdir):
 
 
 def test_issue_not_found_considered_open_xfailed(testdir):
-    '''Issue is open but docs is ignored'''
+    """Issue is open but docs is ignored"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -524,7 +546,7 @@ def test_issue_not_found_considered_open_xfailed(testdir):
 
 
 def test_jira_marker_bad_args_due_to_changed_regex(testdir):
-    '''Issue ID in marker doesn't match due to changed regex'''
+    """Issue ID in marker doesn't match due to changed regex"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -536,13 +558,13 @@ def test_jira_marker_bad_args_due_to_changed_regex(testdir):
     result = testdir.runpytest(
         '--jira',
         '--jira-url', 'https://issues.jboss.org',
-        '--jira-issue-regex',  '[0-9]+-[0-9]+',
+        '--jira-issue-regex', '[0-9]+-[0-9]+',
     )
     assert_outcomes(result, 0, 0, 0, error=1)
 
 
 def test_invalid_jira_marker_strategy_parameter(testdir):
-    '''Invalid parameter for --jira-marker-strategy'''
+    """Invalid parameter for --jira-marker-strategy"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -554,16 +576,16 @@ def test_invalid_jira_marker_strategy_parameter(testdir):
     result = testdir.runpytest(
         '--jira',
         '--jira-url', 'https://issues.jboss.org',
-        '--jira-marker-strategy',  'invalid',
+        '--jira-marker-strategy', 'invalid',
     )
     assert "invalid choice: \'invalid\'" in result.stderr.str()
 
 
 def test_custom_resolve_status_fail(testdir):
-    '''
+    """
     Test case matches custom status and do not skip it because it is considered
     as closed, in additional test fails because of some regression.
-    '''
+    """
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -581,10 +603,10 @@ def test_custom_resolve_status_fail(testdir):
 
 
 def test_custom_resolve_status_pass(testdir):
-    '''
+    """
     Test case matches custom status and do not skip it because it is considered
     as closed, in additional test passes.
-    '''
+    """
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -602,11 +624,11 @@ def test_custom_resolve_status_pass(testdir):
 
 
 def test_custom_resolve_status_skipped_on_closed_status(testdir):
-    '''
+    """
     Test case is marked by issue with status 'closed' which is one of defaults
     resolved statuses. But test-case gets skipped because custom resolved
     statuses are set.
-    '''
+    """
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -624,7 +646,7 @@ def test_custom_resolve_status_skipped_on_closed_status(testdir):
 
 
 def test_run_test_case_false1(testdir):
-    '''Test case shouldn't get executed'''
+    """Test case shouldn't get executed"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -645,7 +667,7 @@ def test_run_test_case_false1(testdir):
 
 
 def test_run_test_case_false2(testdir):
-    '''Test case shouldn't get executed'''
+    """Test case shouldn't get executed"""
     testdir.makeconftest(CONFTEST)
     plugin_args = (
         '--jira',
@@ -664,7 +686,7 @@ def test_run_test_case_false2(testdir):
 
 
 def test_run_test_case_true1(testdir):
-    '''Test case should get executed'''
+    """Test case should get executed"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
