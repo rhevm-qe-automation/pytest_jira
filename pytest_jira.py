@@ -162,6 +162,8 @@ class JiraSiteConnection(object):
             self.basic_auth = None
 
     def _jira_request(self, url, method='get', **kwargs):
+        if 'verify' not in kwargs:
+            kwargs['verify'] = self.verify
         if self.basic_auth:
             return requests.request(
                 method, url, auth=self.basic_auth, **kwargs
