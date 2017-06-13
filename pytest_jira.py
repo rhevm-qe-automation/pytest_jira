@@ -65,6 +65,15 @@ class JiraHooks(object):
         else:
             return not self.is_affected(issue_id)
 
+    def _get_issue_url(self, issue_id):
+        return "%s/browse/%s" % (self.conn.get_url(), issue_id)
+
+    def _get_skipped_reson(self, issue_id):
+        return "JIRA[{issue_id}] {summary}\n{url}".format(
+            issue_id=issue_id, summary=self.issue_cache[issue_id]['summary'],
+            url=self._get_issue_url(issue_id),
+        )
+
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(self, item, call):
         """
@@ -85,7 +94,7 @@ class JiraHooks(object):
                         rep.outcome = "skipped"
                     elif PYTEST_MAJOR_VERSION < 3:
                         rep.outcome = "failed"
-                    rep.wasxfail = "failed"
+                    rep.wasxfail = self._get_skipped_reson(issue_id)
                     break
 
     def pytest_runtest_setup(self, item):
@@ -103,7 +112,7 @@ class JiraHooks(object):
         # Check all linked issues
         for issue_id in jira_ids:
             if not jira_run and not self.is_issue_resolved(issue_id):
-                pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
+                pytest.skip(self._get_skipped_reson(issue_id))
 
     def fixed_in_version(self, issue_id):
         """
@@ -207,6 +216,7 @@ class JiraSiteConnection(object):
             'versions': set(v['name'] for v in field['versions']),
             'fixed_versions': set(v['name'] for v in field['fixVersions']),
             'status': field['status']['name'].lower(),
+            'summary': field['summary'],
         }
 
     def get_url(self):
@@ -251,7 +261,10 @@ class JiraMarkerReporter(object):
 
     def get_default(self, jid):
         if self.strategy == 'open':
-            return {'status': 'open'}
+            return {
+                'status': 'open',
+                'summary': 'ISSUE DOES NOT EXIST, CONSIDERED AS OPEN ISSUE',
+            }
         if self.strategy == 'strict':
             raise ValueError(
                 'JIRA marker argument `%s` was not found' % jid
