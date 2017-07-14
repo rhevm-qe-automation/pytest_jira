@@ -114,8 +114,8 @@ class JiraHooks(object):
         """
         if not self.version:
             return True
-        affected = self.issue_cache[issue_id].get('versions', set())
-        fixed = self.issue_cache[issue_id].get('fixed_versions', set())
+        affected = self.issue_cache[issue_id].get('versions')
+        fixed = self.issue_cache[issue_id].get('fixed_versions')
         return self.version not in (affected - fixed)
 
     def is_affected(self, issue_id):
@@ -131,13 +131,13 @@ class JiraHooks(object):
         )
 
     def _affected_version(self, issue_id):
-        affected = self.issue_cache[issue_id].get('versions', set())
+        affected = self.issue_cache[issue_id].get('versions')
         if not self.version or not affected:
             return True
         return self.version in affected
 
     def _affected_components(self, issue_id):
-        affected = self.issue_cache[issue_id].get('components', set())
+        affected = self.issue_cache[issue_id].get('components')
         if not self.components or not affected:
             return True
         return bool(self.components.intersection(affected))
@@ -203,9 +203,9 @@ class JiraSiteConnection(object):
         issue = self._jira_request(issue_url).json()
         field = issue['fields']
         return {
-            'components': set(c['name'] for c in field['components']),
-            'versions': set(v['name'] for v in field['versions']),
-            'fixed_versions': set(v['name'] for v in field['fixVersions']),
+            'components': set(c['name'] for c in field.get('components', set())),
+            'versions': set(v['name'] for v in field.get('versions', set())),
+            'fixed_versions': set(v['name'] for v in field.get('fixVersions', set())),
             'status': field['status']['name'].lower(),
         }
 
