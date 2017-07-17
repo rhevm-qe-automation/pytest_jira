@@ -203,12 +203,15 @@ class JiraSiteConnection(object):
         issue = self._jira_request(issue_url).json()
         field = issue['fields']
         return {
-            'components': set(c['name'] for c in field.get('components',
-                                                           set())),
-            'versions': set(v['name'] for v in field.get('versions',
-                                                         set())),
-            'fixed_versions': set(v['name'] for v in field.get('fixVersions',
-                                                               set())),
+            'components': set(
+                c['name'] for c in field.get('components', set())
+            ),
+            'versions': set(
+                v['name'] for v in field.get('versions', set())
+            ),
+            'fixed_versions': set(
+                v['name'] for v in field.get('fixVersions', set())
+            ),
             'status': field['status']['name'].lower(),
         }
 
