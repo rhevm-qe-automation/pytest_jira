@@ -704,3 +704,15 @@ def test_run_test_case_true1(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, passed=0, skipped=0, failed=0, error=0, xfailed=1)
+
+
+def test_jira_fixture_run(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        def test_pass(jira_issue):
+            assert not jira_issue("ORG-1382")
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(1, 0, 0)
