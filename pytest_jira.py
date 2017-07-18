@@ -114,8 +114,8 @@ class JiraHooks(object):
         """
         if not self.version:
             return True
-        affected = self.issue_cache[issue_id].get('versions', set())
-        fixed = self.issue_cache[issue_id].get('fixed_versions', set())
+        affected = self.issue_cache[issue_id].get('versions')
+        fixed = self.issue_cache[issue_id].get('fixed_versions')
         return self.version not in (affected - fixed)
 
     def is_affected(self, issue_id):
@@ -131,13 +131,13 @@ class JiraHooks(object):
         )
 
     def _affected_version(self, issue_id):
-        affected = self.issue_cache[issue_id].get('versions', set())
+        affected = self.issue_cache[issue_id].get('versions')
         if not self.version or not affected:
             return True
         return self.version in affected
 
     def _affected_components(self, issue_id):
-        affected = self.issue_cache[issue_id].get('components', set())
+        affected = self.issue_cache[issue_id].get('components')
         if not self.components or not affected:
             return True
         return bool(self.components.intersection(affected))
@@ -203,9 +203,15 @@ class JiraSiteConnection(object):
         issue = self._jira_request(issue_url).json()
         field = issue['fields']
         return {
-            'components': set(c['name'] for c in field['components']),
-            'versions': set(v['name'] for v in field['versions']),
-            'fixed_versions': set(v['name'] for v in field['fixVersions']),
+            'components': set(
+                c['name'] for c in field.get('components', set())
+            ),
+            'versions': set(
+                v['name'] for v in field.get('versions', set())
+            ),
+            'fixed_versions': set(
+                v['name'] for v in field.get('fixVersions', set())
+            ),
             'status': field['status']['name'].lower(),
         }
 
@@ -216,8 +222,8 @@ class JiraSiteConnection(object):
 class JiraMarkerReporter(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, strategy, docs, patern):
-        self.issue_pattern = re.compile(patern or self.issue_re)
+    def __init__(self, strategy, docs, pattern):
+        self.issue_pattern = re.compile(pattern or self.issue_re)
         self.docs = docs
         self.strategy = strategy.lower()
 
@@ -435,5 +441,16 @@ def pytest_configure(config):
                 resolved_statuses,
                 config.getvalue('jira_run_test_case'),
             )
+            config._jira = jira_plugin
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
             assert ok
+
+
+@pytest.fixture
+def jira_issue(request):
+    def wrapper_jira_issue(issue_id):
+        jira_plugin = getattr(request.config, '_jira')
+        if jira_plugin and jira_plugin.conn.is_connected():
+            return jira_plugin.is_issue_resolved(issue_id)
+
+    return wrapper_jira_issue

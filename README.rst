@@ -97,6 +97,25 @@ If you specify version, open issues will be **unresolved** only if they also aff
 Even when the issue is closed, but your version was affected and it was not fixed for your version,
 the issue will be considered **unresolved**.
 
+Fixture usage
+-------------
+
+Besides a test marker, you can also use the added ``jira_issue`` fixture. This enables examining issue status mid test
+and not just at the beginning of a test. The fixture return a boolean representing the state of the issue.
+If the issue isn't found, or the jira plugin isn't loaded, it returns ``None``.
+
+.. code:: python
+
+    NICE_ANIMALS = ["bird", "cat", "dog"]
+
+    def test_stuff(jira_issue):
+        animals = ["dog", "cat"]
+        for animal in animals:
+            if animal == "dog" and jira_issue("ORG-1382") is True:
+                print("Issue is still open, cannot check for dogs!")
+                continue
+            assert animal in NICE_ANIMALS
+
 Requires
 ========
 
