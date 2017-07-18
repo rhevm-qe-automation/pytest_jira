@@ -1,5 +1,5 @@
 import six
-from pytest_jira import _get_value
+from pytest_jira.plugin import _get_value
 
 
 def init_config_parser():
