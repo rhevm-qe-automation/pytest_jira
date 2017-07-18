@@ -222,8 +222,8 @@ class JiraSiteConnection(object):
 class JiraMarkerReporter(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, strategy, docs, patern):
-        self.issue_pattern = re.compile(patern or self.issue_re)
+    def __init__(self, strategy, docs, pattern):
+        self.issue_pattern = re.compile(pattern or self.issue_re)
         self.docs = docs
         self.strategy = strategy.lower()
 
@@ -441,5 +441,16 @@ def pytest_configure(config):
                 resolved_statuses,
                 config.getvalue('jira_run_test_case'),
             )
+            config._jira = jira_plugin
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
             assert ok
+
+
+@pytest.fixture
+def jira_issue(request):
+    def wrapper_jira_issue(issue_id):
+        jira_plugin = getattr(request.config, '_jira')
+        if jira_plugin and jira_plugin.conn.is_connected():
+            return jira_plugin.is_issue_resolved(issue_id)
+
+    return wrapper_jira_issue
