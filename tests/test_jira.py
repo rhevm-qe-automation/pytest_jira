@@ -1,4 +1,5 @@
 import os
+from xml.dom import minidom
 import pytest
 
 CONFTEST = """
@@ -6,31 +7,41 @@ import pytest
 
 
 FAKE_ISSUES = {
-    "ORG-1412": {"status": "closed"},
-    "ORG-1382": {"status": "open"},
+    "ORG-1412": {
+        "status": "closed",
+        "summary": "Issue",
+    },
+    "ORG-1382": {
+        "status": "open",
+        "summary": "Issue",
+    },
     "ORG-1510": {
         "components": set(["com1", "com2"]),
         "versions": set(),
         "fixed_versions": set(),
         "status": "open",
+        "summary": "Issue",
     },
     "ORG-1511": {
         "components": set(["com1", "com2"]),
         "versions": set(["foo-0.1", "foo-0.2"]),
         "fixVersions": set(),
         "status": "open",
+        "summary": "Issue",
     },
     "ORG-1512": {
         "components": set(),
         "versions": set(),
         "fixed_versions": set(),
         "status": "custom-status",
+        "summary": "Issue",
     },
     "ORG-1501": {
         "components": set(),
         "versions": set(["foo-0.1", "foo-0.2"]),
         "fixed_versions": set(["foo-0.2"]),
         "status": "closed",
+        "summary": "Issue",
     },
 }
 
@@ -704,3 +715,42 @@ def test_run_test_case_true1(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, passed=0, skipped=0, failed=0, error=0, xfailed=1)
+
+
+def test_jira_report_issue_details(testdir):
+    '''Expected skip due to run=False'''
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", run=False)
+        def test_skipped():
+            assert False
+
+        @pytest.mark.jira("ORG-1382", run=True)
+        def test_xpassed():
+            pass
+
+        @pytest.mark.jira("ORG-1382", run=True)
+        def test_xfail():
+            assert False
+    """)
+    resultpath = testdir.tmpdir.join('junit.xml')
+    plugin_args = list(PLUGIN_ARGS) + ['--junitxml=%s' % resultpath]
+    result = testdir.runpytest(*plugin_args)
+    assert_outcomes(
+        result, passed=0, skipped=1, failed=0, xpassed=1, xfailed=1
+    )
+    xmldoc = minidom.parse(str(resultpath))
+    testcases = xmldoc.getElementsByTagName('testcase')
+    assert len(testcases) == 3
+    skipped = testcases[0]
+    message = skipped.getElementsByTagName('skipped')
+    assert len(message) == 1
+    assert "ORG-1382" in message[0].getAttributeNode('message').value
+    # xpassed = testcases[1]
+    # NOTE: xpassed doesn't contain message
+    xfailed = testcases[2]
+    message = xfailed.getElementsByTagName('skipped')
+    assert len(message) == 1
+    assert "ORG-1382" in message[0].toxml()
