@@ -449,8 +449,10 @@ def pytest_configure(config):
 @pytest.fixture
 def jira_issue(request):
     """
-    Returns a bool representing the state of the issue, or None if no connection could be made.
-    See https://github.com/rhevm-qe-automation/pytest_jira#fixture-usage for more details
+    Returns a bool representing the state of the issue, or None if no
+    connection could be made. See
+    https://github.com/rhevm-qe-automation/pytest_jira#fixture-usage
+    for more details
     """
     def wrapper_jira_issue(issue_id):
         jira_plugin = getattr(request.config, '_jira')
