@@ -454,8 +454,9 @@ def jira_issue(request):
     https://github.com/rhevm-qe-automation/pytest_jira#fixture-usage
     for more details
     """
+
     def wrapper_jira_issue(issue_id):
-        jira_plugin = getattr(request.config, '_jira')
+        jira_plugin = getattr(request.config, '_jira', None)
         if jira_plugin and jira_plugin.conn.is_connected():
             return jira_plugin.is_issue_resolved(issue_id)
 
