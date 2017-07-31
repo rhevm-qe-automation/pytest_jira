@@ -102,7 +102,7 @@ class JiraHooks(object):
 
         # Check all linked issues
         for issue_id in jira_ids:
-            if not jira_run and not self.is_issue_resolved(issue_id):
+            if not self.is_issue_resolved(issue_id) and not jira_run:
                 pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
 
     def fixed_in_version(self, issue_id):
