@@ -734,7 +734,7 @@ def test_jira_fixture_run_positive(testdir):
         import pytest
 
         def test_pass(jira_issue):
-            assert not jira_issue("ORG-1382")
+            assert jira_issue("ORG-1382")
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(1, 0, 0)
@@ -746,7 +746,7 @@ def test_jira_fixture_run_negative(testdir):
         import pytest
 
         def test_pass(jira_issue):
-            assert jira_issue("ORG-1382")
+            assert not jira_issue("ORG-1382")
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(0, 0, 1)
