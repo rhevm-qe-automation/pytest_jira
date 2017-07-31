@@ -17,7 +17,7 @@ import requests
 import six
 
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
-DEFAULT_RESOLVE_STATUSES = ('closed', 'resolved')
+DEFAULT_RESOLVE_STATUSES = ['closed', 'resolved']
 DEFAULT_RUN_TEST_CASE = True
 
 
@@ -102,7 +102,7 @@ class JiraHooks(object):
 
         # Check all linked issues
         for issue_id in jira_ids:
-            if not self.is_issue_resolved(issue_id) and not jira_run:
+            if not jira_run and not self.is_issue_resolved(issue_id):
                 pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
 
     def fixed_in_version(self, issue_id):
@@ -412,10 +412,10 @@ def pytest_configure(config):
 
     resolved_statuses = config.getvalue('jira_resolved_statuses')
     if isinstance(resolved_statuses, six.string_types):
-        resolved_statuses = (
+        resolved_statuses = [
             s.strip().lower() for s in resolved_statuses.split(',')
             if s.strip()
-        )
+        ]
     if not resolved_statuses:
         resolved_statuses = DEFAULT_RESOLVE_STATUSES
 

@@ -60,17 +60,6 @@ def assert_outcomes(
     assert outcomes.get("xfailed", 0) == xfailed
 
 
-def test_jira_plugin_disabled(testdir):
-    testdir.makepyfile("""
-        import pytest
-        @pytest.mark.jira("ORG-1382", run=True)
-        def test_pass():
-            assert True
-    """)
-    result = testdir.runpytest()
-    assert_outcomes(result, 1, 0, 0)
-
-
 def test_jira_marker_no_args(testdir):
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
@@ -717,17 +706,6 @@ def test_run_test_case_true1(testdir):
     assert_outcomes(result, passed=0, skipped=0, failed=0, error=0, xfailed=1)
 
 
-def test_jira_fixture_plugin_disabled(testdir):
-    testdir.makepyfile("""
-        import pytest
-
-        def test_pass(jira_issue):
-            assert jira_issue("ORG-1382") is None
-    """)
-    result = testdir.runpytest()
-    assert_outcomes(result, 1, 0, 0)
-
-
 def test_jira_fixture_run_positive(testdir):
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
@@ -750,3 +728,16 @@ def test_jira_fixture_run_negative(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(0, 0, 1)
+
+
+def test_run_false_for_resolved_issue(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1412", run=False)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(1, 0, 0)
