@@ -17,7 +17,7 @@ import requests
 import six
 
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
-DEFAULT_RESOLVE_STATUSES = ['closed', 'resolved']
+DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
 
 
@@ -417,7 +417,7 @@ def pytest_configure(config):
             if s.strip()
         ]
     if not resolved_statuses:
-        resolved_statuses = DEFAULT_RESOLVE_STATUSES
+        resolved_statuses = list(DEFAULT_RESOLVE_STATUSES)
 
     if config.getvalue('jira') and config.getvalue('jira_url'):
         jira_connection = JiraSiteConnection(
