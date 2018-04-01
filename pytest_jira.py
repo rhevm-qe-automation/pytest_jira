@@ -16,6 +16,7 @@ import pytest
 import requests
 import six
 
+
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
@@ -175,9 +176,16 @@ class JiraSiteConnection(object):
         # This URL work for both anonymous and logged in users
         auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
         r = self._jira_request(auth_url)
-        # Handle connection errors
-        r.raise_for_status()
 
+        # Handle connection errors
+        try:
+            r.raise_for_status()
+        except Exception:
+            raise Exception(
+                "HTTPError: 401 Client Error for url: {url}".format(
+                    url=self.url
+                )
+            )
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
         if not r.text:

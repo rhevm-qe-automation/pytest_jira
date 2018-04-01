@@ -305,7 +305,10 @@ def test_invalid_authentication_exception(testdir):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert "Invalid credentials" in result.stderr.str()
+    assert (
+        "Invalid credentials" in result.stderr.str() or
+        "401 Client Error" in result.stderr.str()
+    )
 
 
 @pytest.mark.parametrize("status_code", [
