@@ -137,6 +137,89 @@ def test_open_jira_marker_pass(testdir):
     assert_outcomes(result, 0, 0, 0, 0, 1)
 
 
+def test_open_jira_marker_with_condition_pass(testdir):
+    """Expected skip due to unresolved JIRA"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", condition=True)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_open_jira_marker_without_condition_fail(testdir):
+    """Expected skip due to unresolved JIRA"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", condition=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_multiple_jira_markers_with_condition_pass(testdir):
+    """Expected skip due to unresolved JIRA"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", condition=True)
+        @pytest.mark.jira("ORG-1412", condition=True)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_multiple_jira_markers_open_without_condition_fail(testdir):
+    """Expected to fail as condition for open JIRA is False"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", condition=False)
+        @pytest.mark.jira("ORG-1412", condition=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+def test_multiple_jira_markers_without_condition_fail(testdir):
+    """Expected to fail as condition for open JIRA is False"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", "ORG-1412", condition=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+def test_multiple_jira_markers_with_one_condition_pass(testdir):
+    """Expected to fail as condition for open JIRA is False"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", "ORG-1412", condition=True)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
 def test_open_jira_docstr_pass(testdir):
     """Expected skip due to unresolved JIRA Issue %s"""
     testdir.makeconftest(CONFTEST)

@@ -240,9 +240,14 @@ class JiraMarkerReporter(object):
         # Was the jira marker used?
         if 'jira' in item.keywords:
             marker = item.keywords['jira']
-            if len(marker.args) == 0:
-                raise TypeError('JIRA marker requires one, or more, arguments')
-            jira_ids.extend(item.keywords['jira'].args)
+            # process markers independently
+            for mark in marker:
+                if not mark.kwargs.get('condition', True):
+                    continue
+
+                if len(mark.args) == 0:
+                    raise TypeError('JIRA marker requires one, or more, arguments')
+                jira_ids.extend(mark.args)
 
         # Was a jira issue referenced in the docstr?
         if self.docs and item.function.__doc__:
