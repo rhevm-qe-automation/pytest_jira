@@ -138,7 +138,7 @@ def test_open_jira_marker_pass(testdir):
 
 
 def test_open_jira_marker_with_condition_pass(testdir):
-    """Expected skip due to unresolved JIRA"""
+    """Expected skip due to unresolved JIRA when condition is True"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -152,7 +152,7 @@ def test_open_jira_marker_with_condition_pass(testdir):
 
 
 def test_open_jira_marker_without_condition_fail(testdir):
-    """Expected skip due to unresolved JIRA"""
+    """Expected test to fail as unresolved JIRA has been marked with False condition"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -166,7 +166,7 @@ def test_open_jira_marker_without_condition_fail(testdir):
 
 
 def test_multiple_jira_markers_with_condition_pass(testdir):
-    """Expected skip due to unresolved JIRA"""
+    """Expected test to skip due to multiple JIRA lines with condition set"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -195,7 +195,7 @@ def test_multiple_jira_markers_open_without_condition_fail(testdir):
     result.assert_outcomes(0, 0, 1)
 
 def test_multiple_jira_markers_without_condition_fail(testdir):
-    """Expected to fail as condition for open JIRA is False"""
+    """Expected to fail as condition is False"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -208,7 +208,7 @@ def test_multiple_jira_markers_without_condition_fail(testdir):
     result.assert_outcomes(0, 0, 1)
 
 def test_multiple_jira_markers_with_one_condition_pass(testdir):
-    """Expected to fail as condition for open JIRA is False"""
+    """Expected to skip as condition for JIRA tickets is True"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
