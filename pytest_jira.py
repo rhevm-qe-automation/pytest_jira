@@ -230,10 +230,11 @@ class JiraSiteConnection(object):
 class JiraMarkerReporter(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, strategy, docs, pattern):
+    def __init__(self, strategy, docs, pattern, connection=None):
         self.issue_pattern = re.compile(pattern or self.issue_re)
         self.docs = docs
         self.strategy = strategy.lower()
+        self.jira_connection = connection
 
     def get_jira_issues(self, item):
         jira_ids = []
@@ -243,9 +244,14 @@ class JiraMarkerReporter(object):
             # process markers independently
             for mark in marker:
                 skip_if = mark.kwargs.get('skipif', True)
+
+                # skip_if value is callable
                 if callable(skip_if):
-                    if not skip_if():
+                    if not all(
+                            [skip_if(self.jira_connection.get_issue(jira_id))
+                             for jira_id in mark.args]):
                         continue
+                # treat skip_if value as boolean
                 elif not skip_if:
                     continue
 
@@ -448,6 +454,7 @@ def pytest_configure(config):
             config.getvalue('jira_marker_strategy'),
             config.getvalue('jira_docs'),
             config.getvalue('jira_regex'),
+            jira_connection
         )
         if jira_connection.is_connected():
             # if connection to jira fails, plugin won't be loaded

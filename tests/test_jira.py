@@ -172,8 +172,8 @@ def test_open_jira_marker_with_callable_skipif_pass(testdir):
     testdir.makepyfile("""
         import pytest
 
-        keys = ('a', 'b')
-        @pytest.mark.jira("ORG-1382", skipif=lambda: 'a' in keys)
+        @pytest.mark.jira("ORG-1382", "ORG-1412",
+            skipif=lambda i: i.get('status') in ('to do', 'done'))
         def test_pass():
             assert False
     """)
@@ -181,15 +181,15 @@ def test_open_jira_marker_with_callable_skipif_pass(testdir):
     assert_outcomes(result, 0, 0, 0, xfailed=1)
 
 
-def test_open_jira_marker_without_callable_skipif_fail(testdir):
+def test_open_jira_marker_with_callable_skipif_fail(testdir):
     """Expected test to fail as unresolved JIRA marker is ignored
     due to False-like return from lambda"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        keys = ('a', 'b')
-        @pytest.mark.jira("ORG-1382", skipif=lambda: 'c' in keys)
+        @pytest.mark.jira("ORG-1382", "ORG-1412",
+            skipif=lambda i: i.get('status') == 'waiting')
         def test_fail():
             assert False
     """)

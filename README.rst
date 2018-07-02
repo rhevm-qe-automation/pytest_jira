@@ -78,6 +78,21 @@ If ``skipif`` is is false jira marker line will be ignored.
   def test_fail():  # will run and fail as jira marker is ignored
       assert False
 
+Using lambda value for skipif
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+You can use value for ``skipif`` parameter. Lambda function must take
+issue JSON as input value and return boolean-like value. If any JIRA ID
+returns False-like value marker line will be ignored.
+
+.. code:: python
+
+  @pytest.mark.jira("ORG-1382", skipif=lambda i: 'my component' in i['components'])
+  def test_fail():  # Test will run if 'my component' is not present in Jira issue's components
+      assert False
+
+  @pytest.mark.jira("ORG-1382", "ORG-1412", skipif=lambda i: 'to do' == i['status'])
+  def test_fail():  # Test will run if either of JIRA issue's status differs from 'to do'
+      assert False
 
 
 Issue ID in docstring
