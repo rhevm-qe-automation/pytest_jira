@@ -30,6 +30,11 @@ Test results
    -  the test is executed and based on it
       the result is **passed** or **failed**
 
+- If the **skipif** parameter is provided ...
+
+  -  with value *False* or *callable returning False-like value* jira marker line is **ignored**
+
+
 **NOTE:** You can set default value for ``run`` parameter globally in config
 file (option ``run_test_case``) or from CLI
 ``--jira-do-not-run-test-case``. Default value is ``run=True``.
@@ -55,8 +60,9 @@ Strategies for dealing with issue IDs that were not found:
 
 Issue ID in decorator
 ~~~~~~~~~~~~~~~~~~~~~
-If you use decorator you can specify optional parameter ``run``. If it's false
-and issue is unresolved, the test will be skipped.
+If you use decorator you can specify optional parameters ``run`` and ``skipif``.
+If ``run`` is false and issue is unresolved, the test will be skipped.
+If ``skipif`` is is false jira marker line will be ignored.
 
 .. code:: python
 
@@ -67,6 +73,12 @@ and issue is unresolved, the test will be skipped.
   @pytest.mark.jira("ORG-1382")
   def test_xfail(): # will run and xfail if unresolved
       assert False
+
+  @pytest.mark.jira("ORG-1382", skipif=False)
+  def test_fail():  # will run and fail as jira marker is ignored
+      assert False
+
+
 
 Issue ID in docstring
 ~~~~~~~~~~~~~~~~~~~~~

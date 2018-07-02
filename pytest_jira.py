@@ -242,11 +242,16 @@ class JiraMarkerReporter(object):
             marker = item.keywords['jira']
             # process markers independently
             for mark in marker:
-                if not mark.kwargs.get('condition', True):
+                skip_if = mark.kwargs.get('skipif', True)
+                if callable(skip_if):
+                    if not skip_if():
+                        continue
+                elif not skip_if:
                     continue
 
                 if len(mark.args) == 0:
-                    raise TypeError('JIRA marker requires one, or more, arguments')
+                    raise TypeError(
+                        'JIRA marker requires one, or more, arguments')
                 jira_ids.extend(mark.args)
 
         # Was a jira issue referenced in the docstr?

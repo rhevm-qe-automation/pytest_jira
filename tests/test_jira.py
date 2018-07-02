@@ -137,13 +137,13 @@ def test_open_jira_marker_pass(testdir):
     assert_outcomes(result, 0, 0, 0, 0, 1)
 
 
-def test_open_jira_marker_with_condition_pass(testdir):
-    """Expected skip due to unresolved JIRA when condition is True"""
+def test_open_jira_marker_with_skipif_pass(testdir):
+    """Expected skip due to unresolved JIRA when skipif is True"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        @pytest.mark.jira("ORG-1382", condition=True)
+        @pytest.mark.jira("ORG-1382", skipif=True)
         def test_pass():
             assert False
     """)
@@ -151,13 +151,14 @@ def test_open_jira_marker_with_condition_pass(testdir):
     assert_outcomes(result, 0, 0, 0, xfailed=1)
 
 
-def test_open_jira_marker_without_condition_fail(testdir):
-    """Expected test to fail as unresolved JIRA has been marked with False condition"""
+def test_open_jira_marker_without_skipif_fail(testdir):
+    """Expected test to fail as unresolved JIRA marker
+    is parametrized with False skipif"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        @pytest.mark.jira("ORG-1382", condition=False)
+        @pytest.mark.jira("ORG-1382", skipif=False)
         def test_fail():
             assert False
     """)
@@ -165,14 +166,14 @@ def test_open_jira_marker_without_condition_fail(testdir):
     result.assert_outcomes(0, 0, 1)
 
 
-def test_multiple_jira_markers_with_condition_pass(testdir):
-    """Expected test to skip due to multiple JIRA lines with condition set"""
+def test_open_jira_marker_with_callable_skipif_pass(testdir):
+    """Expected skip as skipif value is lambda returning True"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        @pytest.mark.jira("ORG-1382", condition=True)
-        @pytest.mark.jira("ORG-1412", condition=True)
+        keys = ('a', 'b')
+        @pytest.mark.jira("ORG-1382", skipif=lambda: 'a' in keys)
         def test_pass():
             assert False
     """)
@@ -180,45 +181,79 @@ def test_multiple_jira_markers_with_condition_pass(testdir):
     assert_outcomes(result, 0, 0, 0, xfailed=1)
 
 
-def test_multiple_jira_markers_open_without_condition_fail(testdir):
-    """Expected to fail as condition for open JIRA is False"""
+def test_open_jira_marker_without_callable_skipif_fail(testdir):
+    """Expected test to fail as unresolved JIRA marker is ignored
+    due to False-like return from lambda"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        @pytest.mark.jira("ORG-1382", condition=False)
-        @pytest.mark.jira("ORG-1412", condition=True)
+        keys = ('a', 'b')
+        @pytest.mark.jira("ORG-1382", skipif=lambda: 'c' in keys)
         def test_fail():
             assert False
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(0, 0, 1)
 
-def test_multiple_jira_markers_without_condition_fail(testdir):
-    """Expected to fail as condition is False"""
+
+def test_multiple_jira_markers_with_skipif_pass(testdir):
+    """Expected test to skip due to multiple JIRA lines with skipif set"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        @pytest.mark.jira("ORG-1382", "ORG-1412", condition=False)
-        def test_fail():
-            assert False
-    """)
-    result = testdir.runpytest(*PLUGIN_ARGS)
-    result.assert_outcomes(0, 0, 1)
-
-def test_multiple_jira_markers_with_one_condition_pass(testdir):
-    """Expected to skip as condition for JIRA tickets is True"""
-    testdir.makeconftest(CONFTEST)
-    testdir.makepyfile("""
-        import pytest
-
-        @pytest.mark.jira("ORG-1382", "ORG-1412", condition=True)
+        @pytest.mark.jira("ORG-1382", skipif=True)
+        @pytest.mark.jira("ORG-1412", skipif=True)
         def test_pass():
             assert False
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_multiple_jira_markers_open_without_skipif_fail(testdir):
+    """Expected to fail as skipif for open JIRA is False"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", skipif=False)
+        @pytest.mark.jira("ORG-1412", skipif=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_multiple_jira_markers_without_skipif_fail(testdir):
+    """Expected to fail as skipif is False"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", "ORG-1412", skipif=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_multiple_jira_markers_with_one_skipif_pass(testdir):
+    """Expected to skip as skipif for JIRA tickets is True"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", "ORG-1412", skipif=True)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
 
 def test_open_jira_docstr_pass(testdir):
     """Expected skip due to unresolved JIRA Issue %s"""
