@@ -16,7 +16,6 @@ import pytest
 import requests
 import six
 
-
 PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
@@ -80,8 +79,17 @@ class JiraHooks(object):
             jira_ids = []
 
         if call.when == 'call' and jira_ids:
-            for issue_id in jira_ids:
+            for issue_id, skipif in jira_ids:
+
                 if not self.is_issue_resolved(issue_id):
+
+                    if callable(skipif):
+                        if not skipif(self.issue_cache[issue_id]):
+                            continue
+                    else:
+                        if not skipif:
+                            continue
+
                     if call.excinfo:
                         rep.outcome = "skipped"
                     elif PYTEST_MAJOR_VERSION < 3:
@@ -102,7 +110,7 @@ class JiraHooks(object):
         jira_ids = self.mark.get_jira_issues(item)
 
         # Check all linked issues
-        for issue_id in jira_ids:
+        for issue_id, _ in jira_ids:
             if not jira_run and not self.is_issue_resolved(issue_id):
                 pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
 
@@ -230,11 +238,10 @@ class JiraSiteConnection(object):
 class JiraMarkerReporter(object):
     issue_re = r"([A-Z]+-[0-9]+)"
 
-    def __init__(self, strategy, docs, pattern, connection=None):
+    def __init__(self, strategy, docs, pattern):
         self.issue_pattern = re.compile(pattern or self.issue_re)
         self.docs = docs
         self.strategy = strategy.lower()
-        self.jira_connection = connection
 
     def get_jira_issues(self, item):
         jira_ids = []
@@ -245,32 +252,24 @@ class JiraMarkerReporter(object):
             for mark in marker:
                 skip_if = mark.kwargs.get('skipif', True)
 
-                # skip_if value is callable
-                if callable(skip_if):
-                    if not all(
-                            [skip_if(self.jira_connection.get_issue(jira_id))
-                             for jira_id in mark.args]):
-                        continue
-                # treat skip_if value as boolean
-                elif not skip_if:
-                    continue
-
                 if len(mark.args) == 0:
                     raise TypeError(
                         'JIRA marker requires one, or more, arguments')
-                jira_ids.extend(mark.args)
+
+                for arg in mark.args:
+                    jira_ids.append((arg, skip_if))
 
         # Was a jira issue referenced in the docstr?
         if self.docs and item.function.__doc__:
             jira_ids.extend(
                 [
-                    m.group(0)
+                    (m.group(0), True)
                     for m in self.issue_pattern.finditer(item.function.__doc__)
                 ]
             )
 
         # Filter valid issues, and return unique issues
-        for jid in set(jira_ids):
+        for jid, _ in set(jira_ids):
             if not self.issue_pattern.match(jid):
                 raise ValueError(
                     'JIRA marker argument `%s` does not match pattern' % jid
@@ -453,8 +452,7 @@ def pytest_configure(config):
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
             config.getvalue('jira_docs'),
-            config.getvalue('jira_regex'),
-            jira_connection
+            config.getvalue('jira_regex')
         )
         if jira_connection.is_connected():
             # if connection to jira fails, plugin won't be loaded

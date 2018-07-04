@@ -32,6 +32,18 @@ FAKE_ISSUES = {
         "fixed_versions": set(["foo-0.2"]),
         "status": "closed",
     },
+    "ORG-1513": {
+        "components": set(['component1', 'component2']),
+        "versions": set(),
+        "fixed_versions": set(),
+        "status": "custom-status",
+    },
+    "ORG-1514": {
+        "components": set(['component2', 'component3']),
+        "versions": set(["foo-0.1", "foo-0.2"]),
+        "fixed_versions": set(["foo-0.2"]),
+        "status": "closed",
+    },
 }
 
 
@@ -167,13 +179,16 @@ def test_open_jira_marker_without_skipif_fail(testdir):
 
 
 def test_open_jira_marker_with_callable_skipif_pass(testdir):
-    """Expected skip as skipif value is lambda returning True"""
+    """
+    Expected skip as skipif value is a lambda returning True. Expected
+    component 'component2' is present on both closed and open JIRA issue
+    """
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        @pytest.mark.jira("ORG-1382", "ORG-1412",
-            skipif=lambda i: i.get('status') in ('to do', 'done'))
+        @pytest.mark.jira("ORG-1513", "ORG-1514",
+            skipif=lambda i: 'component2' in i.get('components'))
         def test_pass():
             assert False
     """)
@@ -182,14 +197,16 @@ def test_open_jira_marker_with_callable_skipif_pass(testdir):
 
 
 def test_open_jira_marker_with_callable_skipif_fail(testdir):
-    """Expected test to fail as unresolved JIRA marker is ignored
-    due to False-like return from lambda"""
+    """
+    Expected fail as skipif value for open issue is a lambda returning False.
+    Expected component 'component3' is present only on closed JIRA issue
+    """
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
 
-        @pytest.mark.jira("ORG-1382", "ORG-1412",
-            skipif=lambda i: i.get('status') == 'waiting')
+        @pytest.mark.jira("ORG-1513", "ORG-1514",
+            skipif=lambda i: 'component3' in i.get('components'))
         def test_fail():
             assert False
     """)

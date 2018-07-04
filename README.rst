@@ -80,7 +80,7 @@ If ``skipif`` is is false jira marker line will be ignored.
 
 Using lambda value for skipif
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-You can use value for ``skipif`` parameter. Lambda function must take
+You can use lambda value for ``skipif`` parameter. Lambda function must take
 issue JSON as input value and return boolean-like value. If any JIRA ID
 returns False-like value marker line will be ignored.
 
