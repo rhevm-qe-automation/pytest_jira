@@ -901,3 +901,23 @@ def test_run_false_for_resolved_issue(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(1, 0, 0)
+
+
+def test_xfail_strict(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.ini',
+        pytest="\n".join([
+            '[pytest]',
+            'xfail_strict = True',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382")
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, passed=0, skipped=0, failed=1, error=0, xfailed=0)

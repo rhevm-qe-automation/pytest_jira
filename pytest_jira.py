@@ -30,6 +30,7 @@ class JiraHooks(object):
             components=None,
             resolved_statuses=None,
             run_test_case=DEFAULT_RUN_TEST_CASE,
+            strict_xfail=False,
     ):
         self.conn = connection
         self.mark = marker
@@ -43,6 +44,8 @@ class JiraHooks(object):
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
+
+        self.strict_xfail = strict_xfail
 
     def is_issue_resolved(self, issue_id):
         """
@@ -82,19 +85,24 @@ class JiraHooks(object):
             for issue_id, skipif in jira_ids:
 
                 if not self.is_issue_resolved(issue_id):
-
                     if callable(skipif):
                         if not skipif(self.issue_cache[issue_id]):
                             continue
                     else:
                         if not skipif:
                             continue
+                    rep.wasxfail = "failed"
 
                     if call.excinfo:
                         rep.outcome = "skipped"
-                    elif PYTEST_MAJOR_VERSION < 3:
-                        rep.outcome = "failed"
-                    rep.wasxfail = "failed"
+                    else:
+                        if PYTEST_MAJOR_VERSION < 3:
+                            rep.outcome = "failed"
+                        if self.strict_xfail:
+                            rep.outcome = "failed"
+                            rep.longrepr = ("[XPASS(strict)] with unresolved "
+                                            "issue '{}'").format(issue_id)
+                            delattr(rep, 'wasxfail')
                     break
 
     def pytest_runtest_setup(self, item):
@@ -463,6 +471,7 @@ def pytest_configure(config):
                 components,
                 resolved_statuses,
                 config.getvalue('jira_run_test_case'),
+                config.getini("xfail_strict"),
             )
             config._jira = jira_plugin
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")

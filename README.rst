@@ -23,7 +23,10 @@ Test results
    -  and the *run=False*, the test is **skiped**
 
    -  and the *run=True* or not set, the test is executed and based on it
-      the result is **xpassed** (e.g. unexpected pass) or **xfailed** (e.g. expected fail)
+      the result is **xpassed** (e.g. unexpected pass) or **xfailed** (e.g. expected fail).
+      Interpretation of **xpassed** result depends on the py.test ini-file **xfail_strict** value,
+      i.e. with *xfail_strict=true* **xpassed** results will fail the test suite.
+      More information about strict xfail available on the py.test `doc <https://docs.pytest.org/en/latest/skipping.html#strict-parameter>`__
 
 -  If the test **resolved** ...
 
@@ -190,9 +193,9 @@ Usage
 
    Configuration options can be overridden with command line options as well.
    For all available command line options run following command.
-   
+
    .. code:: sh
-   
+
      py.test --help
 
 2. Mark your tests with jira marker and issue id.
