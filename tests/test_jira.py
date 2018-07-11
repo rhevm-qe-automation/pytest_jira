@@ -92,7 +92,8 @@ def test_jira_marker_no_args(testdir):
             assert True
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
-    assert_outcomes(result, 0, 0, 0, 1)
+    text = 'JIRA marker requires one, or more, arguments'
+    assert text in result.stdout.str()
 
 
 def test_jira_marker_bad_args(testdir):
@@ -105,7 +106,9 @@ def test_jira_marker_bad_args(testdir):
             assert True
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
-    assert_outcomes(result, 0, 0, 0, 1)
+    text = ('JIRA marker argument `there is no issue here` '
+            'does not match pattern')
+    assert text in result.stdout.str()
 
 
 def test_jira_marker_bad_args2(testdir):
@@ -118,7 +121,7 @@ def test_jira_marker_bad_args2(testdir):
             assert True
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
-    assert_outcomes(result, 0, 0, 0, 1)
+    assert 'expected string or ' in result.stdout.str()
 
 
 def test_jira_marker_no_run(testdir):
@@ -709,7 +712,8 @@ def test_jira_marker_bad_args_due_to_changed_regex(testdir):
         '--jira-url', 'https://issues.jboss.org',
         '--jira-issue-regex', '[0-9]+-[0-9]+',
     )
-    assert_outcomes(result, 0, 0, 0, error=1)
+    text = 'JIRA marker argument `ORG-1382` does not match pattern'
+    assert text in result.stdout.str()
 
 
 def test_invalid_jira_marker_strategy_parameter(testdir):
@@ -921,3 +925,20 @@ def test_xfail_strict(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, passed=0, skipped=0, failed=1, error=0, xfailed=0)
+
+
+def test_jira_marker_with_parametrize(testdir):
+    """"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.parametrize('arg', [
+            pytest.mark.jira("ORG-1382", run=True)(1),
+            2,
+        ])
+        def test_fail(arg):
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, failed=1, xfailed=1)
