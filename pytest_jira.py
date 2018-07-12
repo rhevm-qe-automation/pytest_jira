@@ -16,7 +16,6 @@ import pytest
 import requests
 import six
 
-PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
 
@@ -68,22 +67,18 @@ class JiraHooks(object):
         else:
             return not self.is_affected(issue_id)
 
-    @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_makereport(self, item, call):
-        """
-        Figure out how to mark JIRA test other than SKIPPED
-        """
+    def pytest_collection_modifyitems(self, config, items):
+        for item in items:
+            try:
+                jira_ids = self.mark.get_jira_issues(item)
+            except Exception as exc:
+                pytest.exit(exc)
 
-        outcome = yield
-        rep = outcome.get_result()
-        try:
-            jira_ids = self.mark.get_jira_issues(item)
-        except Exception:
-            jira_ids = []
+            jira_run = self.run_test_case
+            if 'jira' in item.keywords:
+                jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
 
-        if call.when == 'call' and jira_ids:
             for issue_id, skipif in jira_ids:
-
                 if not self.is_issue_resolved(issue_id):
                     if callable(skipif):
                         if not skipif(self.issue_cache[issue_id]):
@@ -91,36 +86,11 @@ class JiraHooks(object):
                     else:
                         if not skipif:
                             continue
-                    rep.wasxfail = "failed"
-
-                    if call.excinfo:
-                        rep.outcome = "skipped"
+                    reason = "%s/browse/%s" % (self.conn.get_url(), issue_id)
+                    if jira_run:
+                        item.add_marker(pytest.mark.xfail(reason=reason))
                     else:
-                        if PYTEST_MAJOR_VERSION < 3:
-                            rep.outcome = "failed"
-                        if self.strict_xfail:
-                            rep.outcome = "failed"
-                            rep.longrepr = ("[XPASS(strict)] with unresolved "
-                                            "issue '{}'").format(issue_id)
-                            delattr(rep, 'wasxfail')
-                    break
-
-    def pytest_runtest_setup(self, item):
-        """
-        Skip test if ...
-          * the provided JIRA issue is unresolved
-          * AND jira_run is False
-        :param item: test being run.
-        """
-        jira_run = self.run_test_case
-        if 'jira' in item.keywords:
-            jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
-        jira_ids = self.mark.get_jira_issues(item)
-
-        # Check all linked issues
-        for issue_id, _ in jira_ids:
-            if not jira_run and not self.is_issue_resolved(issue_id):
-                pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
+                        item.add_marker(pytest.mark.skip(reason=reason))
 
     def fixed_in_version(self, issue_id):
         """
@@ -257,6 +227,8 @@ class JiraMarkerReporter(object):
         if 'jira' in item.keywords:
             marker = item.keywords['jira']
             # process markers independently
+            if not isinstance(marker, (list, tuple)):
+                marker = [marker]
             for mark in marker:
                 skip_if = mark.kwargs.get('skipif', True)
 
