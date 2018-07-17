@@ -432,7 +432,8 @@ def test_invalid_authentication_exception(testdir):
     """Failed authentication, exception should be raised"""
     testdir.makepyfile("""
         import pytest
-
+        
+        @pytest.mark.jira('FOO-1234')
         def test_pass():
             pass
     """)
@@ -444,8 +445,8 @@ def test_invalid_authentication_exception(testdir):
     )
     result = testdir.runpytest(*ARGS)
     assert (
-        "Invalid credentials" in result.stderr.str() or
-        "401 Client Error" in result.stderr.str()
+            "Invalid credentials" in result.stderr.str() or
+            "401 Client Error" in result.stderr.str()
     )
 
 
@@ -593,7 +594,7 @@ def test_affected_component_skiped(testdir):
 
 
 def test_strategy_ignore_failed(testdir):
-    """Invalid issue ID is ignored and test failes"""
+    """Invalid issue ID is ignored and test fails"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -942,3 +943,28 @@ def test_jira_marker_with_parametrize(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, 0, 0, failed=1, xfailed=1)
+
+
+@pytest.mark.parametrize("error_strategy, passed, skipped, failed, error", [
+    ('strict', 0, 0, 0, 1),
+    ('skip', 0, 1, 0, 0),
+    ('ignore', 1, 0, 0, 0),
+])
+def test_request_exception(testdir, error_strategy, passed, skipped, failed, error):
+    """HTTP Error when trying to connect"""
+    testdir.makepyfile("""
+        import pytest
+        
+        @pytest.mark.jira("FOO-1234")
+        def test_pass():
+            pass
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', 'http://httpbin.org/status/400',
+        '--jira-user', 'user123',
+        '--jira-password', 'passwd123',
+        '--jira-error-strategy', error_strategy
+    )
+    result = testdir.runpytest(*ARGS)
+    assert_outcomes(result, passed=passed, skipped=skipped, failed=failed, error=error)

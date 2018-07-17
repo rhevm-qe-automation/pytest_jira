@@ -16,6 +16,11 @@ import pytest
 import requests
 import six
 
+try:
+    from http import HTTPStatus
+except ImportError:
+    from httplib import HTTPStatus
+
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
 
@@ -53,10 +58,10 @@ class JiraHooks(object):
         """
         # Access Jira issue (may be cached)
         if issue_id not in self.issue_cache:
-            try:
-                self.issue_cache[issue_id] = self.conn.get_issue(issue_id)
-            except Exception:
-                self.issue_cache[issue_id] = self.mark.get_default(issue_id)
+            jira_issue = self.conn.get_issue(issue_id)
+            if not jira_issue:
+                jira_issue = self.mark.get_default(issue_id)
+            self.issue_cache[issue_id] = jira_issue
 
         # Skip test if issue remains unresolved
         if self.issue_cache[issue_id] is None:
@@ -113,8 +118,8 @@ class JiraHooks(object):
         else return False
         """
         return (
-            self._affected_version(issue_id) and
-            self._affected_components(issue_id)
+                self._affected_version(issue_id) and
+                self._affected_components(issue_id)
         )
 
     def _affected_version(self, issue_id):
@@ -144,6 +149,8 @@ class JiraSiteConnection(object):
         self.verify = verify
         self.error_strategy = error_strategy
 
+        self.is_connected = False
+
         # Setup basic_auth
         if self.username and self.password:
             self.basic_auth = (self.username, self.password)
@@ -154,31 +161,37 @@ class JiraSiteConnection(object):
         if 'verify' not in kwargs:
             kwargs['verify'] = self.verify
         if self.basic_auth:
-            return requests.request(
+            rsp = requests.request(
                 method, url, auth=self.basic_auth, **kwargs
             )
         else:
-            return requests.request(method, url, **kwargs)
+            rsp = requests.request(method, url, **kwargs)
+        try:
+            rsp.raise_for_status()
+        except requests.RequestException as e:
+            code = e.response.status_code
+            if code in (
+                    HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN
+            ):
+                if self.error_strategy == 'strict':
+                    raise Exception(
+                        "Error: {e} url: {url}".format(
+                            url=self.url, e=e
+                        )
+                    )
+                elif self.error_strategy == 'skip':
+                    pytest.skip('Cannot load Jira plugin, skipping')
+                else:
+                    return False
+        return rsp
 
     def check_connection(self):
         # This URL work for both anonymous and logged in users
         auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
         r = self._jira_request(auth_url)
+        if not r:
+            return False
 
-        # Handle connection errors
-        try:
-            r.raise_for_status()
-        except Exception:
-            if self.error_strategy == 'strict':
-                raise Exception(
-                    "HTTPError: 401 Client Error for url: {url}".format(
-                        url=self.url
-                    )
-                )
-            elif self.error_strategy == 'skip':
-                pytest.skip('Cannot load Jira plugin, skipping')
-            else:
-                return False
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
         if not r.text:
@@ -192,12 +205,12 @@ class JiraSiteConnection(object):
             raise Exception('Current user does not have sufficient permissions'
                             ' to view issue')
         else:
+            self.is_connected = True
             return True
 
-    def is_connected(self):
-        return self.check_connection()
-
     def get_issue(self, issue_id):
+        if not self.is_connected:
+            self.check_connection()
         issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
             url=self.url, issue_id=issue_id
         )
@@ -408,7 +421,7 @@ def pytest_addoption(parser):
                     choices=['strict', 'skip', 'ignore'],
                     help="""Action if there is a connection issue
                     strict - raise an exception
-                    ignore - issue id is ignored
+                    ignore - marker is ignored
                     skip - skip any test that has a marker
                     """,
                     )
