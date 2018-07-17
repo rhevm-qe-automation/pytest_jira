@@ -136,11 +136,13 @@ class JiraSiteConnection(object):
             username=None,
             password=None,
             verify=True,
+            error_strategy=None
     ):
         self.url = url
         self.username = username
         self.password = password
         self.verify = verify
+        self.error_strategy = error_strategy
 
         # Setup basic_auth
         if self.username and self.password:
@@ -167,11 +169,16 @@ class JiraSiteConnection(object):
         try:
             r.raise_for_status()
         except Exception:
-            raise Exception(
-                "HTTPError: 401 Client Error for url: {url}".format(
-                    url=self.url
+            if self.error_strategy == 'strict':
+                raise Exception(
+                    "HTTPError: 401 Client Error for url: {url}".format(
+                        url=self.url
+                    )
                 )
-            )
+            elif self.error_strategy == 'skip':
+                pytest.skip('Cannot load Jira plugin, skipping')
+            else:
+                return False
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
         if not r.text:
@@ -392,6 +399,19 @@ def pytest_addoption(parser):
                     help='If set and test is marked by Jira plugin, such '
                          'test case is not executed.'
                     )
+    group.addoption('--jira-error-strategy',
+                    action='store',
+                    dest='jira_error_strategy',
+                    default=_get_value(
+                        config, 'DEFAULT', 'error_strategy', 'strict'
+                    ),
+                    choices=['strict', 'skip', 'ignore'],
+                    help="""Action if there is a connection issue
+                    strict - raise an exception
+                    ignore - issue id is ignored
+                    skip - skip any test that has a marker
+                    """,
+                    )
 
 
 def pytest_configure(config):
@@ -428,26 +448,26 @@ def pytest_configure(config):
             config.getvalue('jira_username'),
             config.getvalue('jira_password'),
             config.getvalue('jira_verify'),
+            config.getvalue('jira_error_strategy'),
         )
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
             config.getvalue('jira_docs'),
             config.getvalue('jira_regex')
         )
-        if jira_connection.is_connected():
-            # if connection to jira fails, plugin won't be loaded
-            jira_plugin = JiraHooks(
-                jira_connection,
-                jira_marker,
-                config.getvalue('jira_product_version'),
-                components,
-                resolved_statuses,
-                config.getvalue('jira_run_test_case'),
-                config.getini("xfail_strict"),
-            )
-            config._jira = jira_plugin
-            ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
-            assert ok
+
+        jira_plugin = JiraHooks(
+            jira_connection,
+            jira_marker,
+            config.getvalue('jira_product_version'),
+            components,
+            resolved_statuses,
+            config.getvalue('jira_run_test_case'),
+            config.getini("xfail_strict"),
+        )
+        config._jira = jira_plugin
+        ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
+        assert ok
 
 
 @pytest.fixture
