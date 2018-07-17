@@ -16,7 +16,6 @@ import pytest
 import requests
 import six
 
-PYTEST_MAJOR_VERSION = int(pytest.__version__.split(".")[0])
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
 
@@ -30,6 +29,7 @@ class JiraHooks(object):
             components=None,
             resolved_statuses=None,
             run_test_case=DEFAULT_RUN_TEST_CASE,
+            strict_xfail=False,
     ):
         self.conn = connection
         self.mark = marker
@@ -43,6 +43,8 @@ class JiraHooks(object):
 
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
+
+        self.strict_xfail = strict_xfail
 
     def is_issue_resolved(self, issue_id):
         """
@@ -65,45 +67,30 @@ class JiraHooks(object):
         else:
             return not self.is_affected(issue_id)
 
-    @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_makereport(self, item, call):
-        """
-        Figure out how to mark JIRA test other than SKIPPED
-        """
+    def pytest_collection_modifyitems(self, config, items):
+        for item in items:
+            try:
+                jira_ids = self.mark.get_jira_issues(item)
+            except Exception as exc:
+                pytest.exit(exc)
 
-        outcome = yield
-        rep = outcome.get_result()
-        try:
-            jira_ids = self.mark.get_jira_issues(item)
-        except Exception:
-            jira_ids = []
+            jira_run = self.run_test_case
+            if 'jira' in item.keywords:
+                jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
 
-        if call.when == 'call' and jira_ids:
-            for issue_id in jira_ids:
+            for issue_id, skipif in jira_ids:
                 if not self.is_issue_resolved(issue_id):
-                    if call.excinfo:
-                        rep.outcome = "skipped"
-                    elif PYTEST_MAJOR_VERSION < 3:
-                        rep.outcome = "failed"
-                    rep.wasxfail = "failed"
-                    break
-
-    def pytest_runtest_setup(self, item):
-        """
-        Skip test if ...
-          * the provided JIRA issue is unresolved
-          * AND jira_run is False
-        :param item: test being run.
-        """
-        jira_run = self.run_test_case
-        if 'jira' in item.keywords:
-            jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
-        jira_ids = self.mark.get_jira_issues(item)
-
-        # Check all linked issues
-        for issue_id in jira_ids:
-            if not jira_run and not self.is_issue_resolved(issue_id):
-                pytest.skip("%s/browse/%s" % (self.conn.get_url(), issue_id))
+                    if callable(skipif):
+                        if not skipif(self.issue_cache[issue_id]):
+                            continue
+                    else:
+                        if not skipif:
+                            continue
+                    reason = "%s/browse/%s" % (self.conn.get_url(), issue_id)
+                    if jira_run:
+                        item.add_marker(pytest.mark.xfail(reason=reason))
+                    else:
+                        item.add_marker(pytest.mark.skip(reason=reason))
 
     def fixed_in_version(self, issue_id):
         """
@@ -175,9 +162,16 @@ class JiraSiteConnection(object):
         # This URL work for both anonymous and logged in users
         auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
         r = self._jira_request(auth_url)
-        # Handle connection errors
-        r.raise_for_status()
 
+        # Handle connection errors
+        try:
+            r.raise_for_status()
+        except Exception:
+            raise Exception(
+                "HTTPError: 401 Client Error for url: {url}".format(
+                    url=self.url
+                )
+            )
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
         if not r.text:
@@ -232,21 +226,30 @@ class JiraMarkerReporter(object):
         # Was the jira marker used?
         if 'jira' in item.keywords:
             marker = item.keywords['jira']
-            if len(marker.args) == 0:
-                raise TypeError('JIRA marker requires one, or more, arguments')
-            jira_ids.extend(item.keywords['jira'].args)
+            # process markers independently
+            if not isinstance(marker, (list, tuple)):
+                marker = [marker]
+            for mark in marker:
+                skip_if = mark.kwargs.get('skipif', True)
+
+                if len(mark.args) == 0:
+                    raise TypeError(
+                        'JIRA marker requires one, or more, arguments')
+
+                for arg in mark.args:
+                    jira_ids.append((arg, skip_if))
 
         # Was a jira issue referenced in the docstr?
         if self.docs and item.function.__doc__:
             jira_ids.extend(
                 [
-                    m.group(0)
+                    (m.group(0), True)
                     for m in self.issue_pattern.finditer(item.function.__doc__)
                 ]
             )
 
         # Filter valid issues, and return unique issues
-        for jid in set(jira_ids):
+        for jid, _ in set(jira_ids):
             if not self.issue_pattern.match(jid):
                 raise ValueError(
                     'JIRA marker argument `%s` does not match pattern' % jid
@@ -429,7 +432,7 @@ def pytest_configure(config):
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
             config.getvalue('jira_docs'),
-            config.getvalue('jira_regex'),
+            config.getvalue('jira_regex')
         )
         if jira_connection.is_connected():
             # if connection to jira fails, plugin won't be loaded
@@ -440,6 +443,7 @@ def pytest_configure(config):
                 components,
                 resolved_statuses,
                 config.getvalue('jira_run_test_case'),
+                config.getini("xfail_strict"),
             )
             config._jira = jira_plugin
             ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
@@ -458,6 +462,6 @@ def jira_issue(request):
     def wrapper_jira_issue(issue_id):
         jira_plugin = getattr(request.config, '_jira', None)
         if jira_plugin and jira_plugin.conn.is_connected():
-            return jira_plugin.is_issue_resolved(issue_id)
+            return not jira_plugin.is_issue_resolved(issue_id)
 
     return wrapper_jira_issue

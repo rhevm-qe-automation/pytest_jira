@@ -23,12 +23,20 @@ Test results
    -  and the *run=False*, the test is **skiped**
 
    -  and the *run=True* or not set, the test is executed and based on it
-      the result is **xpassed** (e.g. unexpected pass) or **xfailed** (e.g. expected fail)
+      the result is **xpassed** (e.g. unexpected pass) or **xfailed** (e.g. expected fail).
+      Interpretation of **xpassed** result depends on the py.test ini-file **xfail_strict** value,
+      i.e. with *xfail_strict=true* **xpassed** results will fail the test suite.
+      More information about strict xfail available on the py.test `doc <https://docs.pytest.org/en/latest/skipping.html#strict-parameter>`__
 
 -  If the test **resolved** ...
 
    -  the test is executed and based on it
       the result is **passed** or **failed**
+
+- If the **skipif** parameter is provided ...
+
+  -  with value *False* or *callable returning False-like value* jira marker line is **ignored**
+
 
 **NOTE:** You can set default value for ``run`` parameter globally in config
 file (option ``run_test_case``) or from CLI
@@ -55,8 +63,9 @@ Strategies for dealing with issue IDs that were not found:
 
 Issue ID in decorator
 ~~~~~~~~~~~~~~~~~~~~~
-If you use decorator you can specify optional parameter ``run``. If it's false
-and issue is unresolved, the test will be skipped.
+If you use decorator you can specify optional parameters ``run`` and ``skipif``.
+If ``run`` is false and issue is unresolved, the test will be skipped.
+If ``skipif`` is is false jira marker line will be ignored.
 
 .. code:: python
 
@@ -67,6 +76,27 @@ and issue is unresolved, the test will be skipped.
   @pytest.mark.jira("ORG-1382")
   def test_xfail(): # will run and xfail if unresolved
       assert False
+
+  @pytest.mark.jira("ORG-1382", skipif=False)
+  def test_fail():  # will run and fail as jira marker is ignored
+      assert False
+
+Using lambda value for skipif
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+You can use lambda value for ``skipif`` parameter. Lambda function must take
+issue JSON as input value and return boolean-like value. If any JIRA ID
+gets False-like value marker for that issue will be ignored.
+
+.. code:: python
+
+  @pytest.mark.jira("ORG-1382", skipif=lambda i: 'my component' in i['components'])
+  def test_fail():  # Test will run if 'my component' is not present in Jira issue's components
+      assert False
+
+  @pytest.mark.jira("ORG-1382", "ORG-1412", skipif=lambda i: 'to do' == i['status'])
+  def test_fail():  # Test will run if either of JIRA issue's status differs from 'to do'
+      assert False
+
 
 Issue ID in docstring
 ~~~~~~~~~~~~~~~~~~~~~
@@ -163,9 +193,9 @@ Usage
 
    Configuration options can be overridden with command line options as well.
    For all available command line options run following command.
-   
+
    .. code:: sh
-   
+
      py.test --help
 
 2. Mark your tests with jira marker and issue id.

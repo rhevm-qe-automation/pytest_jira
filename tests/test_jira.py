@@ -32,6 +32,18 @@ FAKE_ISSUES = {
         "fixed_versions": set(["foo-0.2"]),
         "status": "closed",
     },
+    "ORG-1513": {
+        "components": set(['component1', 'component2']),
+        "versions": set(),
+        "fixed_versions": set(),
+        "status": "custom-status",
+    },
+    "ORG-1514": {
+        "components": set(['component2', 'component3']),
+        "versions": set(["foo-0.1", "foo-0.2"]),
+        "fixed_versions": set(["foo-0.2"]),
+        "status": "closed",
+    },
 }
 
 
@@ -80,7 +92,8 @@ def test_jira_marker_no_args(testdir):
             assert True
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
-    assert_outcomes(result, 0, 0, 0, 1)
+    text = 'JIRA marker requires one, or more, arguments'
+    assert text in result.stdout.str()
 
 
 def test_jira_marker_bad_args(testdir):
@@ -93,7 +106,9 @@ def test_jira_marker_bad_args(testdir):
             assert True
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
-    assert_outcomes(result, 0, 0, 0, 1)
+    text = ('JIRA marker argument `there is no issue here` '
+            'does not match pattern')
+    assert text in result.stdout.str()
 
 
 def test_jira_marker_bad_args2(testdir):
@@ -106,7 +121,7 @@ def test_jira_marker_bad_args2(testdir):
             assert True
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
-    assert_outcomes(result, 0, 0, 0, 1)
+    assert 'expected string or ' in result.stdout.str()
 
 
 def test_jira_marker_no_run(testdir):
@@ -135,6 +150,129 @@ def test_open_jira_marker_pass(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, 0, 0, 0, 0, 1)
+
+
+def test_open_jira_marker_with_skipif_pass(testdir):
+    """Expected skip due to unresolved JIRA when skipif is True"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", skipif=True)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_open_jira_marker_without_skipif_fail(testdir):
+    """Expected test to fail as unresolved JIRA marker
+    is parametrized with False skipif"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", skipif=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_open_jira_marker_with_callable_skipif_pass(testdir):
+    """
+    Expected skip as skipif value is a lambda returning True. Expected
+    component 'component2' is present on both closed and open JIRA issue
+    """
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1513", "ORG-1514",
+            skipif=lambda i: 'component2' in i.get('components'))
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_open_jira_marker_with_callable_skipif_fail(testdir):
+    """
+    Expected fail as skipif value for open issue is a lambda returning False.
+    Expected component 'component3' is present only on closed JIRA issue
+    """
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1513", "ORG-1514",
+            skipif=lambda i: 'component3' in i.get('components'))
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_multiple_jira_markers_with_skipif_pass(testdir):
+    """Expected test to skip due to multiple JIRA lines with skipif set"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", skipif=True)
+        @pytest.mark.jira("ORG-1412", skipif=True)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
+
+
+def test_multiple_jira_markers_open_without_skipif_fail(testdir):
+    """Expected to fail as skipif for open JIRA is False"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", skipif=False)
+        @pytest.mark.jira("ORG-1412", skipif=True)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_multiple_jira_markers_without_skipif_fail(testdir):
+    """Expected to fail as skipif is False"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", "ORG-1412", skipif=False)
+        def test_fail():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_multiple_jira_markers_with_one_skipif_pass(testdir):
+    """Expected to skip as skipif for JIRA tickets is True"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382", "ORG-1412", skipif=True)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, 0, xfailed=1)
 
 
 def test_open_jira_docstr_pass(testdir):
@@ -305,7 +443,10 @@ def test_invalid_authentication_exception(testdir):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert "Invalid credentials" in result.stderr.str()
+    assert (
+        "Invalid credentials" in result.stderr.str() or
+        "401 Client Error" in result.stderr.str()
+    )
 
 
 @pytest.mark.parametrize("status_code", [
@@ -571,7 +712,8 @@ def test_jira_marker_bad_args_due_to_changed_regex(testdir):
         '--jira-url', 'https://issues.jboss.org',
         '--jira-issue-regex', '[0-9]+-[0-9]+',
     )
-    assert_outcomes(result, 0, 0, 0, error=1)
+    text = 'JIRA marker argument `ORG-1382` does not match pattern'
+    assert text in result.stdout.str()
 
 
 def test_invalid_jira_marker_strategy_parameter(testdir):
@@ -734,7 +876,7 @@ def test_jira_fixture_run_positive(testdir):
         import pytest
 
         def test_pass(jira_issue):
-            assert not jira_issue("ORG-1382")
+            assert jira_issue("ORG-1382")
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(1, 0, 0)
@@ -746,7 +888,7 @@ def test_jira_fixture_run_negative(testdir):
         import pytest
 
         def test_pass(jira_issue):
-            assert jira_issue("ORG-1382")
+            assert not jira_issue("ORG-1382")
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(0, 0, 1)
@@ -763,3 +905,40 @@ def test_run_false_for_resolved_issue(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     result.assert_outcomes(1, 0, 0)
+
+
+def test_xfail_strict(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makefile(
+        '.ini',
+        pytest="\n".join([
+            '[pytest]',
+            'xfail_strict = True',
+        ])
+    )
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1382")
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, passed=0, skipped=0, failed=1, error=0, xfailed=0)
+
+
+def test_jira_marker_with_parametrize(testdir):
+    """"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.parametrize('arg', [
+            pytest.mark.jira("ORG-1382", run=True)(1),
+            2,
+        ])
+        def test_fail(arg):
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, failed=1, xfailed=1)
