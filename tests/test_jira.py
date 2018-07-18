@@ -432,7 +432,7 @@ def test_invalid_authentication_exception(testdir):
     """Failed authentication, exception should be raised"""
     testdir.makepyfile("""
         import pytest
-       
+
         @pytest.mark.jira('FOO-1234')
         def test_pass():
             pass
