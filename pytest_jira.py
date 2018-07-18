@@ -58,12 +58,14 @@ class JiraHooks(object):
         """
         # Access Jira issue (may be cached)
         if issue_id not in self.issue_cache:
-            jira_issue = self.conn.get_issue(issue_id)
-            if not jira_issue:
-                jira_issue = self.mark.get_default(issue_id)
-            self.issue_cache[issue_id] = jira_issue
+            try:
+                self.issue_cache[issue_id] = self.conn.get_issue(issue_id)
+            except requests.RequestException as e:
+                if not e.response.status_code == 404:
+                    raise
+                self.issue_cache[issue_id] = self.mark.get_default(issue_id)
 
-        # Skip test if issue remains unresolved
+                # Skip test if issue remains unresolved
         if self.issue_cache[issue_id] is None:
             return True
 
@@ -168,21 +170,13 @@ class JiraSiteConnection(object):
             rsp = requests.request(method, url, **kwargs)
         try:
             rsp.raise_for_status()
-        except requests.RequestException as e:
-            code = e.response.status_code
-            if code in (
-                    HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN
-            ):
-                if self.error_strategy == 'strict':
-                    raise Exception(
-                        "Error: {e} url: {url}".format(
-                            url=self.url, e=e
-                        )
-                    )
-                elif self.error_strategy == 'skip':
-                    pytest.skip('Cannot load Jira plugin, skipping')
-                else:
-                    return False
+        except requests.RequestException:
+            if self.error_strategy == 'strict':
+                raise
+            elif self.error_strategy == 'skip':
+                pytest.skip('Cannot load Jira plugin, skipping')
+            else:
+                return False
         return rsp
 
     def check_connection(self):
