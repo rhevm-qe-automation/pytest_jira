@@ -447,29 +447,6 @@ def test_invalid_authentication_exception(testdir):
     assert '403 Client Error' in result.stdout.str()
 
 
-@pytest.mark.parametrize("status_code", [
-    (400), (401), (403), (404), (500), (501), (503)
-])
-def test_request_exception(testdir, status_code):
-    """HTTP Error when trying to connect"""
-    testdir.makepyfile("""
-        import pytest
-
-        def test_pass():
-            pass
-    """)
-    ARGS = (
-        '--jira',
-        '--jira-url', 'http://httpbin.org/status/{status_code}'.format(
-            status_code=status_code
-        ),
-        '--jira-user', 'user123',
-        '--jira-password', 'passwd123'
-    )
-    result = testdir.runpytest(*ARGS)
-    assert "HTTPError" in result.stderr.str()
-
-
 def test_disabled_ssl_verification_pass(testdir):
     """Expected PASS due to resolved JIRA Issue"""
     testdir.makeconftest(CONFTEST)
