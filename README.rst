@@ -190,6 +190,7 @@ Usage
      # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
      # resolved_statuses = comma separated list of statuses (closed, resolved)
      # run_test_case = True (default value for 'run' parameter)
+     # error_strategy [strict[skip|ignore] Choose how to handle connection errors
 
    Configuration options can be overridden with command line options as well.
    For all available command line options run following command.
