@@ -16,11 +16,6 @@ import pytest
 import requests
 import six
 
-try:
-    from http import HTTPStatus
-except ImportError:
-    from httplib import HTTPStatus
-
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
 
@@ -487,8 +482,8 @@ def jira_issue(request):
     """
 
     def wrapper_jira_issue(issue_id):
-        jira_plugin = getattr(request.config, '_jira', None)
-        if jira_plugin and jira_plugin.conn.is_connected():
+        jira_plugin = request.config.pluginmanager.getplugin('jira_plugin')
+        if jira_plugin and jira_plugin.conn.check_connection():
             return not jira_plugin.is_issue_resolved(issue_id)
 
     return wrapper_jira_issue

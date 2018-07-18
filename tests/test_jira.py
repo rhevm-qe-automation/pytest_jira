@@ -444,10 +444,7 @@ def test_invalid_authentication_exception(testdir):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert (
-            "Invalid credentials" in result.stderr.str() or
-            "401 Client Error" in result.stderr.str()
-    )
+    assert '403 Client Error' in result.stdout.str()
 
 
 @pytest.mark.parametrize("status_code", [
@@ -952,6 +949,7 @@ def test_jira_marker_with_parametrize(testdir):
 ])
 def test_request_exception(testdir, error_strategy, passed, skipped, failed, error):
     """HTTP Error when trying to connect"""
+    testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
         
