@@ -18,6 +18,7 @@ import six
 
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
+CONNECTION_SKIP_MESSAGE = 'Jira connection issue, skipping test: %s'
 
 
 class JiraHooks(object):
@@ -101,7 +102,7 @@ class JiraHooks(object):
                         raise
                     elif self.error_strategy == 'skip':
                         item.add_marker(pytest.mark.skip(
-                            reason='Jira connection issue, skipping test: %s' % e)
+                            reason=CONNECTION_SKIP_MESSAGE % e)
                         )
                     else:
                         return
@@ -490,7 +491,14 @@ def jira_issue(request):
 
     def wrapper_jira_issue(issue_id):
         jira_plugin = request.config.pluginmanager.getplugin('jira_plugin')
-        if jira_plugin and jira_plugin.conn.check_connection():
-            return not jira_plugin.is_issue_resolved(issue_id)
+        if jira_plugin:
+            try:
+                return not jira_plugin.is_issue_resolved(issue_id)
+            except requests.RequestException as e:
+                strategy = request.config.getoption('--jira-error-strategy')
+                if strategy == 'skip':
+                    pytest.skip(CONNECTION_SKIP_MESSAGE % e)
+                elif strategy == 'strict':
+                    raise
 
     return wrapper_jira_issue

@@ -966,3 +966,27 @@ def test_request_exception(testdir, error_strategy, passed, skipped, failed, err
     )
     result = testdir.runpytest(*ARGS)
     assert_outcomes(result, passed=passed, skipped=skipped, failed=failed, error=error)
+
+
+@pytest.mark.parametrize("error_strategy, passed, skipped, failed, error", [
+    ('strict', 0, 0, 1, 0),
+    ('skip', 0, 1, 0, 0),
+    ('ignore', 0, 0, 1, 0),
+])
+def test_jira_fixture_request_exception(testdir, error_strategy, passed, skipped, failed, error):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        def test_pass(jira_issue):
+            assert jira_issue("FOO-1234")
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', 'http://foo.bar.com',
+        '--jira-user', 'user123',
+        '--jira-password', 'passwd123',
+        '--jira-error-strategy', error_strategy
+    )
+    result = testdir.runpytest(*ARGS)
+    assert_outcomes(result, passed=passed, skipped=skipped, failed=failed, error=error)
