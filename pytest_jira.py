@@ -469,7 +469,6 @@ def pytest_configure(config):
             config.getini("xfail_strict"),
             config.getvalue('jira_error_strategy')
         )
-        config._jira = jira_plugin
         ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
         assert ok
 
