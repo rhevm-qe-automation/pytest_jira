@@ -943,7 +943,7 @@ def test_jira_marker_with_parametrize(testdir):
 
 
 @pytest.mark.parametrize("error_strategy, passed, skipped, failed, error", [
-    ('strict', 0, 0, 0, 1),
+    ('strict', 0, 0, 0, 0),
     ('skip', 0, 1, 0, 0),
     ('ignore', 1, 0, 0, 0),
 ])
@@ -959,7 +959,7 @@ def test_request_exception(testdir, error_strategy, passed, skipped, failed, err
     """)
     ARGS = (
         '--jira',
-        '--jira-url', 'http://httpbin.org/status/400',
+        '--jira-url', 'http://foo.bar.com',
         '--jira-user', 'user123',
         '--jira-password', 'passwd123',
         '--jira-error-strategy', error_strategy

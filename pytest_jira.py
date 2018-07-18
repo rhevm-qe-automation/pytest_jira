@@ -30,6 +30,7 @@ class JiraHooks(object):
             resolved_statuses=None,
             run_test_case=DEFAULT_RUN_TEST_CASE,
             strict_xfail=False,
+            error_strategy=None
     ):
         self.conn = connection
         self.mark = marker
@@ -40,7 +41,7 @@ class JiraHooks(object):
         else:
             self.resolved_statuses = DEFAULT_RESOLVE_STATUSES
         self.run_test_case = run_test_case
-
+        self.error_strategy = error_strategy
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
 
@@ -56,11 +57,12 @@ class JiraHooks(object):
             try:
                 self.issue_cache[issue_id] = self.conn.get_issue(issue_id)
             except requests.RequestException as e:
-                if not e.response.status_code == 404:
+                if not hasattr(e.response, 'status_code') \
+                        or not e.response.status_code == 404:
                     raise
                 self.issue_cache[issue_id] = self.mark.get_default(issue_id)
 
-                # Skip test if issue remains unresolved
+        # Skip test if issue remains unresolved
         if self.issue_cache[issue_id] is None:
             return True
 
@@ -81,18 +83,28 @@ class JiraHooks(object):
                 jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
 
             for issue_id, skipif in jira_ids:
-                if not self.is_issue_resolved(issue_id):
-                    if callable(skipif):
-                        if not skipif(self.issue_cache[issue_id]):
-                            continue
+                try:
+                    if not self.is_issue_resolved(issue_id):
+                        if callable(skipif):
+                            if not skipif(self.issue_cache[issue_id]):
+                                continue
+                        else:
+                            if not skipif:
+                                continue
+                        reason = "%s/browse/%s" % (self.conn.get_url(), issue_id)
+                        if jira_run:
+                            item.add_marker(pytest.mark.xfail(reason=reason))
+                        else:
+                            item.add_marker(pytest.mark.skip(reason=reason))
+                except requests.RequestException as e:
+                    if self.error_strategy == 'strict':
+                        raise
+                    elif self.error_strategy == 'skip':
+                        item.add_marker(pytest.mark.skip(
+                            reason='Jira connection issue, skipping test: %s' % e)
+                        )
                     else:
-                        if not skipif:
-                            continue
-                    reason = "%s/browse/%s" % (self.conn.get_url(), issue_id)
-                    if jira_run:
-                        item.add_marker(pytest.mark.xfail(reason=reason))
-                    else:
-                        item.add_marker(pytest.mark.skip(reason=reason))
+                        return
 
     def fixed_in_version(self, issue_id):
         """
@@ -137,14 +149,12 @@ class JiraSiteConnection(object):
             self, url,
             username=None,
             password=None,
-            verify=True,
-            error_strategy=None
+            verify=True
     ):
         self.url = url
         self.username = username
         self.password = password
         self.verify = verify
-        self.error_strategy = error_strategy
 
         self.is_connected = False
 
@@ -163,15 +173,7 @@ class JiraSiteConnection(object):
             )
         else:
             rsp = requests.request(method, url, **kwargs)
-        try:
-            rsp.raise_for_status()
-        except requests.RequestException:
-            if self.error_strategy == 'strict':
-                raise
-            elif self.error_strategy == 'skip':
-                pytest.skip('Cannot load Jira plugin, skipping')
-            else:
-                return False
+        rsp.raise_for_status()
         return rsp
 
     def check_connection(self):
@@ -203,8 +205,13 @@ class JiraSiteConnection(object):
         issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
             url=self.url, issue_id=issue_id
         )
-        issue = self._jira_request(issue_url).json()
-        field = issue['fields']
+        rsp = self._jira_request(issue_url)
+        if not rsp:
+            if self.error_strategy == 'skip':
+                pytest.skip('Jira plugin not loaded, skipping test')
+            else:
+                return
+        field = rsp.json()['fields']
         return {
             'components': set(
                 c['name'] for c in field.get('components', set())
@@ -449,8 +456,7 @@ def pytest_configure(config):
             config.getvalue('jira_url'),
             config.getvalue('jira_username'),
             config.getvalue('jira_password'),
-            config.getvalue('jira_verify'),
-            config.getvalue('jira_error_strategy'),
+            config.getvalue('jira_verify')
         )
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
@@ -466,6 +472,7 @@ def pytest_configure(config):
             resolved_statuses,
             config.getvalue('jira_run_test_case'),
             config.getini("xfail_strict"),
+            config.getvalue('jira_error_strategy')
         )
         config._jira = jira_plugin
         ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
