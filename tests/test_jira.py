@@ -947,12 +947,19 @@ def test_jira_marker_with_parametrize(testdir):
     ('skip', 0, 1, 0, 0),
     ('ignore', 1, 0, 0, 0),
 ])
-def test_request_exception(testdir, error_strategy, passed, skipped, failed, error):
+def test_marker_error_strategy(
+        testdir,
+        error_strategy,
+        passed,
+        skipped,
+        failed,
+        error
+):
     """HTTP Error when trying to connect"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
-        
+
         @pytest.mark.jira("FOO-1234")
         def test_pass():
             pass
@@ -965,7 +972,13 @@ def test_request_exception(testdir, error_strategy, passed, skipped, failed, err
         '--jira-error-strategy', error_strategy
     )
     result = testdir.runpytest(*ARGS)
-    assert_outcomes(result, passed=passed, skipped=skipped, failed=failed, error=error)
+    assert_outcomes(
+        result,
+        passed=passed,
+        skipped=skipped,
+        failed=failed,
+        error=error
+    )
 
 
 @pytest.mark.parametrize("error_strategy, passed, skipped, failed, error", [
@@ -973,7 +986,14 @@ def test_request_exception(testdir, error_strategy, passed, skipped, failed, err
     ('skip', 0, 1, 0, 0),
     ('ignore', 0, 0, 1, 0),
 ])
-def test_jira_fixture_request_exception(testdir, error_strategy, passed, skipped, failed, error):
+def test_jira_fixture_request_exception(
+        testdir,
+        error_strategy,
+        passed,
+        skipped,
+        failed,
+        error
+):
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
         import pytest
@@ -989,4 +1009,10 @@ def test_jira_fixture_request_exception(testdir, error_strategy, passed, skipped
         '--jira-error-strategy', error_strategy
     )
     result = testdir.runpytest(*ARGS)
-    assert_outcomes(result, passed=passed, skipped=skipped, failed=failed, error=error)
+    assert_outcomes(
+        result,
+        passed=passed,
+        skipped=skipped,
+        failed=failed,
+        error=error
+    )

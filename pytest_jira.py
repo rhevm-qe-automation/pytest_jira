@@ -92,7 +92,8 @@ class JiraHooks(object):
                         else:
                             if not skipif:
                                 continue
-                        reason = "%s/browse/%s" % (self.conn.get_url(), issue_id)
+                        reason = "%s/browse/%s" % \
+                                 (self.conn.get_url(), issue_id)
                         if jira_run:
                             item.add_marker(pytest.mark.xfail(reason=reason))
                         else:
