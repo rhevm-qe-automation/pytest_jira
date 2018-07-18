@@ -181,8 +181,6 @@ class JiraSiteConnection(object):
         # This URL work for both anonymous and logged in users
         auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
         r = self._jira_request(auth_url)
-        if not r:
-            return False
 
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
@@ -206,13 +204,8 @@ class JiraSiteConnection(object):
         issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
             url=self.url, issue_id=issue_id
         )
-        rsp = self._jira_request(issue_url)
-        if not rsp:
-            if self.error_strategy == 'skip':
-                pytest.skip('Jira plugin not loaded, skipping test')
-            else:
-                return
-        field = rsp.json()['fields']
+        issue = self._jira_request(issue_url).json()
+        field = issue['fields']
         return {
             'components': set(
                 c['name'] for c in field.get('components', set())
