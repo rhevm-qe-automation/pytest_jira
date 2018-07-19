@@ -433,6 +433,7 @@ def test_invalid_authentication_exception(testdir):
     testdir.makepyfile("""
         import pytest
 
+        @pytest.mark.jira('FOO-1234')
         def test_pass():
             pass
     """)
@@ -443,33 +444,7 @@ def test_invalid_authentication_exception(testdir):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert (
-        "Invalid credentials" in result.stderr.str() or
-        "401 Client Error" in result.stderr.str()
-    )
-
-
-@pytest.mark.parametrize("status_code", [
-    (400), (401), (403), (404), (500), (501), (503)
-])
-def test_request_exception(testdir, status_code):
-    """HTTP Error when trying to connect"""
-    testdir.makepyfile("""
-        import pytest
-
-        def test_pass():
-            pass
-    """)
-    ARGS = (
-        '--jira',
-        '--jira-url', 'http://httpbin.org/status/{status_code}'.format(
-            status_code=status_code
-        ),
-        '--jira-user', 'user123',
-        '--jira-password', 'passwd123'
-    )
-    result = testdir.runpytest(*ARGS)
-    assert "HTTPError" in result.stderr.str()
+    assert '403 Client Error' in result.stdout.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
@@ -593,7 +568,7 @@ def test_affected_component_skiped(testdir):
 
 
 def test_strategy_ignore_failed(testdir):
-    """Invalid issue ID is ignored and test failes"""
+    """Invalid issue ID is ignored and test fails"""
     testdir.makeconftest(CONFTEST)
     testdir.makefile(
         '.cfg',
@@ -942,3 +917,79 @@ def test_jira_marker_with_parametrize(testdir):
     """)
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, 0, 0, failed=1, xfailed=1)
+
+
+@pytest.mark.parametrize("error_strategy, passed, skipped, failed, error", [
+    ('strict', 0, 0, 0, 0),
+    ('skip', 0, 1, 0, 0),
+    ('ignore', 1, 0, 0, 0),
+])
+def test_marker_error_strategy(
+        testdir,
+        error_strategy,
+        passed,
+        skipped,
+        failed,
+        error
+):
+    """HTTP Error when trying to connect"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("FOO-1234")
+        def test_pass():
+            pass
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', 'http://foo.bar.com',
+        '--jira-user', 'user123',
+        '--jira-password', 'passwd123',
+        '--jira-connection-error-strategy', error_strategy
+    )
+    result = testdir.runpytest(*ARGS)
+    assert_outcomes(
+        result,
+        passed=passed,
+        skipped=skipped,
+        failed=failed,
+        error=error
+    )
+
+
+@pytest.mark.parametrize("error_strategy, passed, skipped, failed, error", [
+    ('strict', 0, 0, 1, 0),
+    ('skip', 0, 1, 0, 0),
+    ('ignore', 0, 0, 1, 0),
+])
+def test_jira_fixture_request_exception(
+        testdir,
+        error_strategy,
+        passed,
+        skipped,
+        failed,
+        error
+):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        def test_pass(jira_issue):
+            assert jira_issue("FOO-1234")
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', 'http://foo.bar.com',
+        '--jira-user', 'user123',
+        '--jira-password', 'passwd123',
+        '--jira-connection-error-strategy', error_strategy
+    )
+    result = testdir.runpytest(*ARGS)
+    assert_outcomes(
+        result,
+        passed=passed,
+        skipped=skipped,
+        failed=failed,
+        error=error
+    )
