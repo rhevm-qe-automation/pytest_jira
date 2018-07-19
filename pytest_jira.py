@@ -18,6 +18,12 @@ import six
 
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
+CONNECTION_SKIP_MESSAGE = 'Jira connection issue, skipping test: %s'
+CONNECTION_ERROR_FLAG_NAME = '--jira-connection-error-strategy'
+STRICT = 'strict'
+SKIP = 'skip'
+IGNORE = 'ignore'
+PLUGIN_NAME = "jira_plugin"
 
 
 class JiraHooks(object):
@@ -30,6 +36,7 @@ class JiraHooks(object):
             resolved_statuses=None,
             run_test_case=DEFAULT_RUN_TEST_CASE,
             strict_xfail=False,
+            connection_error_strategy=None
     ):
         self.conn = connection
         self.mark = marker
@@ -40,7 +47,7 @@ class JiraHooks(object):
         else:
             self.resolved_statuses = DEFAULT_RESOLVE_STATUSES
         self.run_test_case = run_test_case
-
+        self.connection_error_strategy = connection_error_strategy
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
 
@@ -55,7 +62,10 @@ class JiraHooks(object):
         if issue_id not in self.issue_cache:
             try:
                 self.issue_cache[issue_id] = self.conn.get_issue(issue_id)
-            except Exception:
+            except requests.RequestException as e:
+                if not hasattr(e.response, 'status_code') \
+                        or not e.response.status_code == 404:
+                    raise
                 self.issue_cache[issue_id] = self.mark.get_default(issue_id)
 
         # Skip test if issue remains unresolved
@@ -79,18 +89,29 @@ class JiraHooks(object):
                 jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
 
             for issue_id, skipif in jira_ids:
-                if not self.is_issue_resolved(issue_id):
-                    if callable(skipif):
-                        if not skipif(self.issue_cache[issue_id]):
-                            continue
+                try:
+                    if not self.is_issue_resolved(issue_id):
+                        if callable(skipif):
+                            if not skipif(self.issue_cache[issue_id]):
+                                continue
+                        else:
+                            if not skipif:
+                                continue
+                        reason = "%s/browse/%s" % \
+                                 (self.conn.get_url(), issue_id)
+                        if jira_run:
+                            item.add_marker(pytest.mark.xfail(reason=reason))
+                        else:
+                            item.add_marker(pytest.mark.skip(reason=reason))
+                except requests.RequestException as e:
+                    if self.connection_error_strategy == STRICT:
+                        raise
+                    elif self.connection_error_strategy == SKIP:
+                        item.add_marker(pytest.mark.skip(
+                            reason=CONNECTION_SKIP_MESSAGE % e)
+                        )
                     else:
-                        if not skipif:
-                            continue
-                    reason = "%s/browse/%s" % (self.conn.get_url(), issue_id)
-                    if jira_run:
-                        item.add_marker(pytest.mark.xfail(reason=reason))
-                    else:
-                        item.add_marker(pytest.mark.skip(reason=reason))
+                        return
 
     def fixed_in_version(self, issue_id):
         """
@@ -135,12 +156,14 @@ class JiraSiteConnection(object):
             self, url,
             username=None,
             password=None,
-            verify=True,
+            verify=True
     ):
         self.url = url
         self.username = username
         self.password = password
         self.verify = verify
+
+        self.is_connected = False
 
         # Setup basic_auth
         if self.username and self.password:
@@ -152,26 +175,19 @@ class JiraSiteConnection(object):
         if 'verify' not in kwargs:
             kwargs['verify'] = self.verify
         if self.basic_auth:
-            return requests.request(
+            rsp = requests.request(
                 method, url, auth=self.basic_auth, **kwargs
             )
         else:
-            return requests.request(method, url, **kwargs)
+            rsp = requests.request(method, url, **kwargs)
+        rsp.raise_for_status()
+        return rsp
 
     def check_connection(self):
         # This URL work for both anonymous and logged in users
         auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
         r = self._jira_request(auth_url)
 
-        # Handle connection errors
-        try:
-            r.raise_for_status()
-        except Exception:
-            raise Exception(
-                "HTTPError: 401 Client Error for url: {url}".format(
-                    url=self.url
-                )
-            )
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
         if not r.text:
@@ -185,12 +201,12 @@ class JiraSiteConnection(object):
             raise Exception('Current user does not have sufficient permissions'
                             ' to view issue')
         else:
+            self.is_connected = True
             return True
 
-    def is_connected(self):
-        return self.check_connection()
-
     def get_issue(self, issue_id):
+        if not self.is_connected:
+            self.check_connection()
         issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
             url=self.url, issue_id=issue_id
         )
@@ -392,6 +408,19 @@ def pytest_addoption(parser):
                     help='If set and test is marked by Jira plugin, such '
                          'test case is not executed.'
                     )
+    group.addoption(CONNECTION_ERROR_FLAG_NAME,
+                    action='store',
+                    dest='jira_connection_error_strategy',
+                    default=_get_value(
+                        config, 'DEFAULT', 'error_strategy', 'strict'
+                    ),
+                    choices=[STRICT, SKIP, IGNORE],
+                    help="""Action if there is a connection issue
+                    strict - raise an exception
+                    ignore - marker is ignored
+                    skip - skip any test that has a marker
+                    """
+                    )
 
 
 def pytest_configure(config):
@@ -427,27 +456,26 @@ def pytest_configure(config):
             config.getvalue('jira_url'),
             config.getvalue('jira_username'),
             config.getvalue('jira_password'),
-            config.getvalue('jira_verify'),
+            config.getvalue('jira_verify')
         )
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
             config.getvalue('jira_docs'),
             config.getvalue('jira_regex')
         )
-        if jira_connection.is_connected():
-            # if connection to jira fails, plugin won't be loaded
-            jira_plugin = JiraHooks(
-                jira_connection,
-                jira_marker,
-                config.getvalue('jira_product_version'),
-                components,
-                resolved_statuses,
-                config.getvalue('jira_run_test_case'),
-                config.getini("xfail_strict"),
-            )
-            config._jira = jira_plugin
-            ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
-            assert ok
+
+        jira_plugin = JiraHooks(
+            jira_connection,
+            jira_marker,
+            config.getvalue('jira_product_version'),
+            components,
+            resolved_statuses,
+            config.getvalue('jira_run_test_case'),
+            config.getini("xfail_strict"),
+            config.getvalue('jira_connection_error_strategy')
+        )
+        ok = config.pluginmanager.register(jira_plugin, PLUGIN_NAME)
+        assert ok
 
 
 @pytest.fixture
@@ -460,8 +488,15 @@ def jira_issue(request):
     """
 
     def wrapper_jira_issue(issue_id):
-        jira_plugin = getattr(request.config, '_jira', None)
-        if jira_plugin and jira_plugin.conn.is_connected():
-            return not jira_plugin.is_issue_resolved(issue_id)
+        jira_plugin = request.config.pluginmanager.getplugin(PLUGIN_NAME)
+        if jira_plugin:
+            try:
+                return not jira_plugin.is_issue_resolved(issue_id)
+            except requests.RequestException as e:
+                strategy = request.config.getoption(CONNECTION_ERROR_FLAG_NAME)
+                if strategy == SKIP:
+                    pytest.skip(CONNECTION_SKIP_MESSAGE % e)
+                elif strategy == STRICT:
+                    raise
 
     return wrapper_jira_issue
