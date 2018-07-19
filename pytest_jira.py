@@ -36,7 +36,7 @@ class JiraHooks(object):
             resolved_statuses=None,
             run_test_case=DEFAULT_RUN_TEST_CASE,
             strict_xfail=False,
-            error_strategy=None
+            connection_error_strategy=None
     ):
         self.conn = connection
         self.mark = marker
@@ -47,7 +47,7 @@ class JiraHooks(object):
         else:
             self.resolved_statuses = DEFAULT_RESOLVE_STATUSES
         self.run_test_case = run_test_case
-        self.error_strategy = error_strategy
+        self.connection_error_strategy = connection_error_strategy
         # Speed up JIRA lookups for duplicate issues
         self.issue_cache = dict()
 
@@ -104,9 +104,9 @@ class JiraHooks(object):
                         else:
                             item.add_marker(pytest.mark.skip(reason=reason))
                 except requests.RequestException as e:
-                    if self.error_strategy == STRICT:
+                    if self.connection_error_strategy == STRICT:
                         raise
-                    elif self.error_strategy == SKIP:
+                    elif self.connection_error_strategy == SKIP:
                         item.add_marker(pytest.mark.skip(
                             reason=CONNECTION_SKIP_MESSAGE % e)
                         )
@@ -410,11 +410,11 @@ def pytest_addoption(parser):
                     )
     group.addoption(CONNECTION_ERROR_FLAG_NAME,
                     action='store',
-                    dest='jira_error_strategy',
+                    dest='jira_connection_error_strategy',
                     default=_get_value(
                         config, 'DEFAULT', 'error_strategy', 'strict'
                     ),
-                    choices=['strict', 'skip', 'ignore'],
+                    choices=[STRICT, SKIP, IGNORE],
                     help="""Action if there is a connection issue
                     strict - raise an exception
                     ignore - marker is ignored
@@ -472,7 +472,7 @@ def pytest_configure(config):
             resolved_statuses,
             config.getvalue('jira_run_test_case'),
             config.getini("xfail_strict"),
-            config.getvalue('jira_error_strategy')
+            config.getvalue('jira_connection_error_strategy')
         )
         ok = config.pluginmanager.register(jira_plugin, PLUGIN_NAME)
         assert ok
