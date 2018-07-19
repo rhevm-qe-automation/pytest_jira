@@ -19,6 +19,7 @@ import six
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
 CONNECTION_SKIP_MESSAGE = 'Jira connection issue, skipping test: %s'
+CONNECTION_ERROR_FLAG_NAME = '--jira-connection-error-strategy'
 STRICT = 'strict'
 SKIP = 'skip'
 IGNORE = 'ignore'
@@ -132,8 +133,8 @@ class JiraHooks(object):
         else return False
         """
         return (
-            self._affected_version(issue_id) and
-            self._affected_components(issue_id)
+                self._affected_version(issue_id) and
+                self._affected_components(issue_id)
         )
 
     def _affected_version(self, issue_id):
@@ -406,7 +407,7 @@ def pytest_addoption(parser):
                     help='If set and test is marked by Jira plugin, such '
                          'test case is not executed.'
                     )
-    group.addoption('--jira-error-strategy',
+    group.addoption(CONNECTION_ERROR_FLAG_NAME,
                     action='store',
                     dest='jira_error_strategy',
                     default=_get_value(
@@ -417,7 +418,7 @@ def pytest_addoption(parser):
                     strict - raise an exception
                     ignore - marker is ignored
                     skip - skip any test that has a marker
-                    """,
+                    """
                     )
 
 
@@ -491,7 +492,7 @@ def jira_issue(request):
             try:
                 return not jira_plugin.is_issue_resolved(issue_id)
             except requests.RequestException as e:
-                strategy = request.config.getoption('--jira-error-strategy')
+                strategy = request.config.getoption(CONNECTION_ERROR_FLAG_NAME)
                 if strategy == SKIP:
                     pytest.skip(CONNECTION_SKIP_MESSAGE % e)
                 elif strategy == STRICT:
