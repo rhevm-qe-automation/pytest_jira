@@ -23,6 +23,7 @@ CONNECTION_ERROR_FLAG_NAME = '--jira-connection-error-strategy'
 STRICT = 'strict'
 SKIP = 'skip'
 IGNORE = 'ignore'
+PLUGIN_NAME = "jira_plugin"
 
 
 class JiraHooks(object):
@@ -473,7 +474,7 @@ def pytest_configure(config):
             config.getini("xfail_strict"),
             config.getvalue('jira_error_strategy')
         )
-        ok = config.pluginmanager.register(jira_plugin, "jira_plugin")
+        ok = config.pluginmanager.register(jira_plugin, PLUGIN_NAME)
         assert ok
 
 
@@ -487,7 +488,7 @@ def jira_issue(request):
     """
 
     def wrapper_jira_issue(issue_id):
-        jira_plugin = request.config.pluginmanager.getplugin('jira_plugin')
+        jira_plugin = request.config.pluginmanager.getplugin(PLUGIN_NAME)
         if jira_plugin:
             try:
                 return not jira_plugin.is_issue_resolved(issue_id)
