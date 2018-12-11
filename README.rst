@@ -20,7 +20,7 @@ Test results
 ------------
 -  If the test **unresolved** ...
 
-   -  and the *run=False*, the test is **skiped**
+   -  and the *run=False*, the test is **skipped**
 
    -  and the *run=True* or not set, the test is executed and based on it
       the result is **xpassed** (e.g. unexpected pass) or **xfailed** (e.g. expected fail).
@@ -168,12 +168,12 @@ Usage
    * ~/jira.cfg
    * tests\_root\_dir/jira.cfg
 
-   The configuration file is loaded in that order meantioned above.
+   The configuration file is loaded in that order mentioned above.
    That means that first options from global configuration are loaded,
    and might be overwritten by options from user's home directory and
    finally these might be overwritten by options from test's root directory.
 
-   See example bellow, you can use it as tempate, and update it according
+   See example bellow, you can use it as template, and update it according
    to your needs.
 
    .. code:: ini
@@ -191,6 +191,12 @@ Usage
      # resolved_statuses = comma separated list of statuses (closed, resolved)
      # run_test_case = True (default value for 'run' parameter)
      # connection_error_strategy [strict|skip|ignore] Choose how to handle connection errors
+
+   You can set the password field by setting the PYTEST_JIRA_PASSWORD environment variable:
+
+    .. code:: sh
+
+      set PYTEST_JIRA_PASSWORD="FOO"
 
    Configuration options can be overridden with command line options as well.
    For all available command line options run following command.

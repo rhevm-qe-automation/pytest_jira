@@ -24,6 +24,7 @@ STRICT = 'strict'
 SKIP = 'skip'
 IGNORE = 'ignore'
 PLUGIN_NAME = "jira_plugin"
+PASSWORD_ENV_VAR = 'PYTEST_JIRA_PASSWORD'
 
 
 class JiraHooks(object):
@@ -134,8 +135,8 @@ class JiraHooks(object):
         else return False
         """
         return (
-            self._affected_version(issue_id) and
-            self._affected_components(issue_id)
+                self._affected_version(issue_id) and
+                self._affected_components(issue_id)
         )
 
     def _affected_version(self, issue_id):
@@ -455,7 +456,7 @@ def pytest_configure(config):
         jira_connection = JiraSiteConnection(
             config.getvalue('jira_url'),
             config.getvalue('jira_username'),
-            config.getvalue('jira_password'),
+            os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
             config.getvalue('jira_verify')
         )
         jira_marker = JiraMarkerReporter(
