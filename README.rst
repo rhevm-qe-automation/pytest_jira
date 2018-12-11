@@ -196,7 +196,7 @@ Usage
 
     .. code:: sh
 
-      set PYTEST_JIRA_PASSWORD="FOO"
+      export PYTEST_JIRA_PASSWORD="FOO"
 
    Configuration options can be overridden with command line options as well.
    For all available command line options run following command.
