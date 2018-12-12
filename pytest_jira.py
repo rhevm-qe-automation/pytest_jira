@@ -80,7 +80,7 @@ class JiraHooks(object):
             return not self.is_affected(issue_id)
 
     def get_marker(self, item):
-        if LooseVersion(pytest.__version__) >= LooseVersion("4.0.0"):
+        if LooseVersion(pytest.__version__) >= LooseVersion("3.6.0"):
             return item.get_closest_marker("jira")
         else:
             return item.keywords.get("jira")
@@ -249,7 +249,7 @@ class JiraMarkerReporter(object):
 
     def _get_marks(self, item):
         marks = []
-        if LooseVersion(pytest.__version__) >= LooseVersion("4.0.0"):
+        if LooseVersion(pytest.__version__) >= LooseVersion("3.6.0"):
             for mark in item.iter_markers("jira"):
                 marks.append(mark)
         else:
