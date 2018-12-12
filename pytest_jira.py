@@ -135,8 +135,8 @@ class JiraHooks(object):
         else return False
         """
         return (
-                self._affected_version(issue_id) and
-                self._affected_components(issue_id)
+            self._affected_version(issue_id) and
+            self._affected_components(issue_id)
         )
 
     def _affected_version(self, issue_id):
