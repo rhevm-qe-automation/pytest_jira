@@ -25,6 +25,7 @@ STRICT = 'strict'
 SKIP = 'skip'
 IGNORE = 'ignore'
 PLUGIN_NAME = "jira_plugin"
+PASSWORD_ENV_VAR = 'PYTEST_JIRA_PASSWORD'
 
 
 class JiraHooks(object):
@@ -473,7 +474,7 @@ def pytest_configure(config):
         jira_connection = JiraSiteConnection(
             config.getvalue('jira_url'),
             config.getvalue('jira_username'),
-            config.getvalue('jira_password'),
+            os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
             config.getvalue('jira_verify')
         )
         jira_marker = JiraMarkerReporter(
