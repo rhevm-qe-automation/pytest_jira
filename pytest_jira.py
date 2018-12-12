@@ -15,6 +15,7 @@ import sys
 import pytest
 import requests
 import six
+from distutils.version import LooseVersion
 
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
@@ -78,6 +79,12 @@ class JiraHooks(object):
         else:
             return not self.is_affected(issue_id)
 
+    def get_marker(self, item):
+        if LooseVersion(pytest.__version__) >= LooseVersion("4.0.0"):
+            return item.get_closest_marker("jira")
+        else:
+            return item.keywords.get("jira")
+
     def pytest_collection_modifyitems(self, config, items):
         for item in items:
             try:
@@ -86,8 +93,10 @@ class JiraHooks(object):
                 pytest.exit(exc)
 
             jira_run = self.run_test_case
-            if 'jira' in item.keywords:
-                jira_run = item.keywords['jira'].kwargs.get('run', jira_run)
+
+            marker = self.get_marker(item)
+            if marker:
+                jira_run = marker.kwargs.get('run', jira_run)
 
             for issue_id, skipif in jira_ids:
                 try:
@@ -238,23 +247,32 @@ class JiraMarkerReporter(object):
         self.docs = docs
         self.strategy = strategy.lower()
 
+    def _get_marks(self, item):
+        marks = []
+        if LooseVersion(pytest.__version__) >= LooseVersion("4.0.0"):
+            for mark in item.iter_markers("jira"):
+                marks.append(mark)
+        else:
+            if 'jira' in item.keywords:
+                marker = item.keywords['jira']
+                # process markers independently
+                if not isinstance(marker, (list, tuple)):
+                    marker = [marker]
+                for mark in marker:
+                    marks.append(mark)
+        return marks
+
     def get_jira_issues(self, item):
         jira_ids = []
-        # Was the jira marker used?
-        if 'jira' in item.keywords:
-            marker = item.keywords['jira']
-            # process markers independently
-            if not isinstance(marker, (list, tuple)):
-                marker = [marker]
-            for mark in marker:
-                skip_if = mark.kwargs.get('skipif', True)
+        for mark in self._get_marks(item):
+            skip_if = mark.kwargs.get('skipif', True)
 
-                if len(mark.args) == 0:
-                    raise TypeError(
-                        'JIRA marker requires one, or more, arguments')
+            if len(mark.args) == 0:
+                raise TypeError(
+                    'JIRA marker requires one, or more, arguments')
 
-                for arg in mark.args:
-                    jira_ids.append((arg, skip_if))
+            for arg in mark.args:
+                jira_ids.append((arg, skip_if))
 
         # Was a jira issue referenced in the docstr?
         if self.docs and item.function.__doc__:

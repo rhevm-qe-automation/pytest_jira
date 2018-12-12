@@ -1,5 +1,6 @@
 import os
 import pytest
+from distutils.version import LooseVersion
 
 CONFTEST = """
 import pytest
@@ -902,7 +903,30 @@ def test_xfail_strict(testdir):
     assert_outcomes(result, passed=0, skipped=0, failed=1, error=0, xfailed=0)
 
 
-def test_jira_marker_with_parametrize(testdir):
+@pytest.mark.skipif(
+    LooseVersion(pytest.__version__) < LooseVersion("3.0.0"),
+    reason="requires pytest-3 or higher")
+def test_jira_marker_with_parametrize_pytest3(testdir):
+    """"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.parametrize('arg', [
+            pytest.param(1, marks=pytest.mark.jira("ORG-1382", run=True)),
+            2,
+        ])
+        def test_fail(arg):
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    assert_outcomes(result, 0, 0, failed=1, xfailed=1)
+
+
+@pytest.mark.skipif(
+    LooseVersion(pytest.__version__) >= LooseVersion("3.0.0"),
+    reason="requires pytest-2 or lower")
+def test_jira_marker_with_parametrize_pytest2(testdir):
     """"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
