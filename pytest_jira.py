@@ -337,9 +337,9 @@ def pytest_addoption(parser):
     # FIXME - Change to a credentials.yaml ?
     config = six.moves.configparser.ConfigParser()
     config.read([
-        os.path.join('/', 'etc', 'jira.cfg'),
-        os.path.join(parser.extra_info['rootdir'], 'jira.cfg'),
-        os.path.expanduser(os.path.join('~', 'jira.cfg')),
+        str(os.path.join('/', 'etc', 'jira.cfg')),
+        str(os.path.join(parser.extra_info['rootdir'], 'jira.cfg')),
+        str(os.path.expanduser(os.path.join('~', 'jira.cfg'))),
         'jira.cfg',
     ])
 
