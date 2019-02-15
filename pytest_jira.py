@@ -338,6 +338,7 @@ def pytest_addoption(parser):
     config = six.moves.configparser.ConfigParser()
     config.read([
         '/etc/jira.cfg',
+        os.path.join(parser.extra_info['rootdir'], 'jira.cfg'),
         os.path.expanduser('~/jira.cfg'),
         'jira.cfg',
     ])
