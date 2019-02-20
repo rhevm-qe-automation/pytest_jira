@@ -167,6 +167,7 @@ Usage
    * /etc/jira.cfg
    * ~/jira.cfg
    * tests\_root\_dir/jira.cfg
+   * tests\_test\_dir/jira.cfg
 
    The configuration file is loaded in that order mentioned above.
    That means that first options from global configuration are loaded,
