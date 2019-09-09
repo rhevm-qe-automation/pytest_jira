@@ -152,6 +152,7 @@ Requires
 -  pytest >= 2.2.3
 -  requests >= 2.13.0
 -  six
+-  retry>=0.9.2
 
 Installation
 ============

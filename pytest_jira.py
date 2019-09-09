@@ -11,11 +11,13 @@ Author: James Laska
 import os
 import re
 import sys
+from distutils.version import LooseVersion
+from json import JSONDecodeError
 
 import pytest
 import requests
 import six
-from distutils.version import LooseVersion
+from retry import retry
 
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
@@ -214,6 +216,7 @@ class JiraSiteConnection(object):
             self.is_connected = True
             return True
 
+    @retry(JSONDecodeError, tries=3, delay=2)
     def get_issue(self, issue_id):
         if not self.is_connected:
             self.check_connection()
