@@ -1,6 +1,7 @@
 import os
-import pytest
 from distutils.version import LooseVersion
+
+import pytest
 
 CONFTEST = """
 import pytest
@@ -1017,3 +1018,26 @@ def test_jira_fixture_request_exception(
         failed=failed,
         error=error
     )
+
+
+@pytest.mark.parametrize("ticket", ['ORG-1382', 'Foo-Bar'])
+@pytest.mark.parametrize("return_method, _type", [
+    ('--jira-return-issue', 'JiraIssue'),
+    ('', 'bool'),
+])
+def test_jira_fixture_return_metedata(testdir, return_method, _type, ticket):
+    testdir.makepyfile("""
+        import pytest
+        from models import JiraIssue
+
+        def test_pass(jira_issue):
+            issue = jira_issue('%s')
+            assert isinstance(issue, %s)
+    """ % (ticket, _type))
+    ARGS = (
+        '--jira',
+        '--jira-url', 'https://issues.jboss.org',
+        return_method
+    )
+    result = testdir.runpytest(*ARGS)
+    result.assert_outcomes(1, 0, 0)

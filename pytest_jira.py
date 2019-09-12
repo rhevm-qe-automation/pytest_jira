@@ -19,6 +19,8 @@ import requests
 import six
 from retry import retry
 
+from models import JiraIssue
+
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
 CONNECTION_SKIP_MESSAGE = 'Jira connection issue, skipping test: %s'
@@ -40,7 +42,8 @@ class JiraHooks(object):
             resolved_statuses=None,
             run_test_case=DEFAULT_RUN_TEST_CASE,
             strict_xfail=False,
-            connection_error_strategy=None
+            connection_error_strategy=None,
+            return_jira_metadata=False
     ):
         self.conn = connection
         self.mark = marker
@@ -56,6 +59,7 @@ class JiraHooks(object):
         self.issue_cache = dict()
 
         self.strict_xfail = strict_xfail
+        self.return_jira_metadata = return_jira_metadata
 
     def is_issue_resolved(self, issue_id):
         """
@@ -65,12 +69,16 @@ class JiraHooks(object):
         # Access Jira issue (may be cached)
         if issue_id not in self.issue_cache:
             try:
-                self.issue_cache[issue_id] = self.conn.get_issue(issue_id)
+                self.issue_cache[issue_id] = self.conn.get_issue(
+                    issue_id, self.return_jira_metadata
+                )
             except requests.RequestException as e:
                 if not hasattr(e.response, 'status_code') \
                         or not e.response.status_code == 404:
                     raise
                 self.issue_cache[issue_id] = self.mark.get_default(issue_id)
+        if self.return_jira_metadata:
+            return JiraIssue(**self.issue_cache[issue_id])
 
         # Skip test if issue remains unresolved
         if self.issue_cache[issue_id] is None:
@@ -217,7 +225,7 @@ class JiraSiteConnection(object):
             return True
 
     @retry(JSONDecodeError, tries=3, delay=2)
-    def get_issue(self, issue_id):
+    def get_issue(self, issue_id, return_jira_metadata):
         if not self.is_connected:
             self.check_connection()
         issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
@@ -225,18 +233,19 @@ class JiraSiteConnection(object):
         )
         issue = self._jira_request(issue_url).json()
         field = issue['fields']
-        return {
-            'components': set(
-                c['name'] for c in field.get('components', set())
-            ),
-            'versions': set(
-                v['name'] for v in field.get('versions', set())
-            ),
-            'fixed_versions': set(
-                v['name'] for v in field.get('fixVersions', set())
-            ),
-            'status': field['status']['name'].lower(),
-        }
+        return field if return_jira_metadata else \
+            {
+                'components': set(
+                    c['name'] for c in field.get('components', set())
+                ),
+                'versions': set(
+                    v['name'] for v in field.get('versions', set())
+                ),
+                'fixed_versions': set(
+                    v['name'] for v in field.get('fixVersions', set())
+                ),
+                'status': field['status']['name'].lower(),
+            }
 
     def get_url(self):
         return self.url
@@ -444,6 +453,12 @@ def pytest_addoption(parser):
                     skip - skip any test that has a marker
                     """
                     )
+    group.addoption('--jira-return-issue',
+                    action='store_true',
+                    dest='return_jira_metadata',
+                    default=False,
+                    help='If set, will return Jira issue with ticket metadata'
+                    )
 
 
 def pytest_configure(config):
@@ -495,7 +510,8 @@ def pytest_configure(config):
             resolved_statuses,
             config.getvalue('jira_run_test_case'),
             config.getini("xfail_strict"),
-            config.getvalue('jira_connection_error_strategy')
+            config.getvalue('jira_connection_error_strategy'),
+            config.getvalue('return_jira_metadata')
         )
         ok = config.pluginmanager.register(jira_plugin, PLUGIN_NAME)
         assert ok
@@ -514,7 +530,10 @@ def jira_issue(request):
         jira_plugin = request.config.pluginmanager.getplugin(PLUGIN_NAME)
         if jira_plugin:
             try:
-                return not jira_plugin.is_issue_resolved(issue_id)
+                result = jira_plugin.is_issue_resolved(issue_id)
+                if request.config.option.return_jira_metadata:
+                    return result
+                return not result  # return boolean representing of issue state
             except requests.RequestException as e:
                 strategy = request.config.getoption(CONNECTION_ERROR_FLAG_NAME)
                 if strategy == SKIP:
