@@ -17,9 +17,9 @@ from json import JSONDecodeError
 import pytest
 import requests
 import six
+from models import JiraIssue
 from retry import retry
 
-from models import JiraIssue
 
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
