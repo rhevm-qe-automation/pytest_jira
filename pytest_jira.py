@@ -533,8 +533,13 @@ def jira_issue(request):
             try:
                 result = jira_plugin.is_issue_resolved(issue_id)
                 if request.config.option.return_jira_metadata:
-                    if LooseVersion(platform.python_version()) <= LooseVersion("3.6.0"):
-                        raise EnvironmentError("Python 3.6 or greater is required to return Jira issue metadata")
+                    if LooseVersion(platform.python_version()) <= LooseVersion(
+                            "3.6.0"
+                    ):
+                        raise EnvironmentError(
+                            "Python 3.6 or greater is required to return "
+                            "Jira issue metadata"
+                        )
                     return result
                 return not result  # return boolean representing of issue state
             except requests.RequestException as e:
