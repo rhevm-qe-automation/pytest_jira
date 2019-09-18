@@ -194,7 +194,8 @@ Usage
      # resolved_statuses = comma separated list of statuses (closed, resolved)
      # run_test_case = True (default value for 'run' parameter)
      # connection_error_strategy [strict|skip|ignore] Choose how to handle connection errors
-     # return_jira_metadata = False (return Jira issue with metadata instead of boolean result)
+     # return_jira_metadata = False (return Jira issue with metadata instead of boolean result,
+       available in python 3.6 or above)
 
    You can set the password field by setting the PYTEST_JIRA_PASSWORD environment variable:
 

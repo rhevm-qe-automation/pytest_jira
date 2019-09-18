@@ -9,6 +9,7 @@ Author: James Laska
 """
 
 import os
+import platform
 import re
 import sys
 from distutils.version import LooseVersion
@@ -17,9 +18,9 @@ from json import JSONDecodeError
 import pytest
 import requests
 import six
-from models import JiraIssue
 from retry import retry
 
+from jira_model import JiraIssue
 
 DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
 DEFAULT_RUN_TEST_CASE = True
@@ -532,6 +533,8 @@ def jira_issue(request):
             try:
                 result = jira_plugin.is_issue_resolved(issue_id)
                 if request.config.option.return_jira_metadata:
+                    if LooseVersion(platform.python_version()) <= LooseVersion("3.6.0"):
+                        raise EnvironmentError("Python 3.6 or greater is required to return Jira issue metadata")
                     return result
                 return not result  # return boolean representing of issue state
             except requests.RequestException as e:

@@ -1,4 +1,5 @@
 import os
+import platform
 from distutils.version import LooseVersion
 
 import pytest
@@ -1020,15 +1021,18 @@ def test_jira_fixture_request_exception(
     )
 
 
+@pytest.mark.skipif(
+    LooseVersion(platform.python_version()) <= LooseVersion("3.6.0"),
+    reason="requires python 3.6 or higher")
 @pytest.mark.parametrize("ticket", ['ORG-1382', 'Foo-Bar'])
 @pytest.mark.parametrize("return_method, _type", [
     ('--jira-return-issue', 'JiraIssue'),
     ('', 'bool'),
 ])
-def test_jira_fixture_return_metedata(testdir, return_method, _type, ticket):
+def test_jira_fixture_return_metadata(testdir, return_method, _type, ticket):
     testdir.makepyfile("""
         import pytest
-        from models import JiraIssue
+        from jira_model import JiraIssue
 
         def test_pass(jira_issue):
             issue = jira_issue('%s')
