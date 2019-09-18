@@ -1,6 +1,17 @@
+import platform
+from distutils.version import LooseVersion
 from typing import List, Union
 
-from pydantic import BaseModel, Schema
+# import pydantic in supported python versions only
+if LooseVersion(platform.python_version()) >= LooseVersion("3.6.0"):
+    from pydantic import BaseModel, Schema
+else:
+    class BaseModel:
+        pass
+
+    class Schema:
+        def __init__(self, *args, **kwargs):
+            pass
 
 
 class Basic(BaseModel):
@@ -69,4 +80,3 @@ class JiraIssue(BaseModel):
     @property
     def version_list(self):
         return set(version.name for version in self.versions)
-
