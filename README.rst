@@ -153,6 +153,7 @@ Requires
 -  requests >= 2.13.0
 -  six
 -  retry>=0.9.2
+-  marshmallow>=3.2.0
 
 Installation
 ============
@@ -193,6 +194,7 @@ Usage
      # resolved_statuses = comma separated list of statuses (closed, resolved)
      # run_test_case = True (default value for 'run' parameter)
      # connection_error_strategy [strict|skip|ignore] Choose how to handle connection errors
+     # return_jira_metadata = False (return Jira issue with metadata instead of boolean result)
 
    You can set the password field by setting the PYTEST_JIRA_PASSWORD environment variable:
 
