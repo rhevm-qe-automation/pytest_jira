@@ -207,7 +207,9 @@ class JiraSiteConnection(object):
     def check_connection(self):
         # This URL work for both anonymous and logged in users
         auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
-        r = self._jira_request(auth_url, params={'permissions': 'BROWSE_PROJECTS'})
+        r = self._jira_request(
+            auth_url, params={'permissions': 'BROWSE_PROJECTS'}
+        )
 
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
