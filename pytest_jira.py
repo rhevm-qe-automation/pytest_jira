@@ -220,7 +220,7 @@ class JiraSiteConnection(object):
             )
 
         # If the user does not have sufficient permissions to browse issues
-        elif not r.json()['permissions']['BROWSE']['havePermission']:
+        elif not r.json()['permissions']['BROWSE_PROJECTS']['havePermission']:
             raise Exception('Current user does not have sufficient permissions'
                             ' to view issue')
         else:
