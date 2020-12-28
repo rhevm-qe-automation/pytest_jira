@@ -199,6 +199,10 @@ class JiraSiteConnection(object):
             rsp = requests.request(
                 method, url, auth=self.basic_auth, **kwargs
             )
+            if rsp.status_code == 401:
+                rsp = requests.request(
+                    method, f"{url}?_sscc=t", auth=self.basic_auth, **kwargs
+                )
         else:
             rsp = requests.request(method, url, **kwargs)
         rsp.raise_for_status()
