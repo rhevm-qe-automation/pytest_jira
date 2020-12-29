@@ -199,10 +199,6 @@ class JiraSiteConnection(object):
             rsp = requests.request(
                 method, url, auth=self.basic_auth, **kwargs
             )
-            if rsp.status_code == 401:
-                rsp = requests.request(
-                    method, f"{url}?_sscc=t", auth=self.basic_auth, **kwargs
-                )
         else:
             rsp = requests.request(method, url, **kwargs)
         rsp.raise_for_status()
@@ -215,6 +211,11 @@ class JiraSiteConnection(object):
             auth_url, params={'permissions': 'BROWSE_PROJECTS'}
         )
 
+        #  In some Jira instances '_sscc=t' is needed for login.
+        if r.status_code == 401:
+            r = self._jira_request(
+                auth_url, params={'_sscc': 't', 'permissions': 'BROWSE_PROJECTS'}
+            )
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
         if not r.text:
