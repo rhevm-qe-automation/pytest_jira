@@ -177,28 +177,40 @@ class JiraSiteConnection(object):
             self, url,
             username=None,
             password=None,
-            verify=True
+            verify=True,
+            token=None,
     ):
         self.url = url
         self.username = username
         self.password = password
         self.verify = verify
+        self.token = token
 
         self.is_connected = False
 
+        if self.token:
+            token_bearer = f"Bearer {self.token}"
+            self.headers = {'Authorization': token_bearer}
+
         # Setup basic_auth
-        if self.username and self.password:
+        elif self.username and self.password:
             self.basic_auth = (self.username, self.password)
+
         else:
             self.basic_auth = None
 
     def _jira_request(self, url, method='get', **kwargs):
         if 'verify' not in kwargs:
             kwargs['verify'] = self.verify
-        if self.basic_auth:
+
+        if self.token:
+            rsp = requests.request(method, url, headers=self.headers, **kwargs)
+
+        elif self.basic_auth:
             rsp = requests.request(
                 method, url, auth=self.basic_auth, **kwargs
             )
+
         else:
             rsp = requests.request(method, url, **kwargs)
         rsp.raise_for_status()
@@ -376,6 +388,12 @@ def pytest_addoption(parser):
                     default=_get_value(config, 'DEFAULT', 'password'),
                     metavar='password',
                     help='JIRA password.')
+    group.addoption('--jira-token',
+                    action='store',
+                    dest='jira_token',
+                    default=_get_value(config, 'DEFAULT', 'token'),
+                    metavar='token',
+                    help='JIRA token.')
     group.addoption('--jira-no-ssl-verify',
                     action='store_false',
                     dest='jira_verify',
@@ -497,7 +515,8 @@ def pytest_configure(config):
             config.getvalue('jira_url'),
             config.getvalue('jira_username'),
             os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
-            config.getvalue('jira_verify')
+            config.getvalue('jira_verify'),
+            config.getvalue('jira_token'),
         )
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
@@ -545,3 +564,13 @@ def jira_issue(request):
                     raise
 
     return wrapper_jira_issue
+
+
+if __name__ == "__main__":
+    jtoken = JiraSiteConnection(url="https://issues.redhat.com", token="NTIzODYzNDIzMDkzOn1RwJ6AXXISP0DfxHuapgzdg8pE")
+    jtoken.check_connection()
+    jtoken.get_issue("CNV-14575", False)
+
+    juser = JiraSiteConnection(url="https://issues.redhat.com", username="cnv-automation", password="cnv12345678")
+    juser.check_connection()
+    juser.get_issue("CNV-14575", False)
