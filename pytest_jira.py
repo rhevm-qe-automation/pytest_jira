@@ -564,13 +564,3 @@ def jira_issue(request):
                     raise
 
     return wrapper_jira_issue
-
-
-if __name__ == "__main__":
-    jtoken = JiraSiteConnection(url="https://issues.redhat.com", token="NTIzODYzNDIzMDkzOn1RwJ6AXXISP0DfxHuapgzdg8pE")
-    jtoken.check_connection()
-    jtoken.get_issue("CNV-14575", False)
-
-    juser = JiraSiteConnection(url="https://issues.redhat.com", username="cnv-automation", password="cnv12345678")
-    juser.check_connection()
-    juser.get_issue("CNV-14575", False)
