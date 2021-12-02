@@ -185,6 +185,7 @@ Usage
      url = https://jira.atlassian.com
      username = USERNAME (or blank for no authentication
      password = PASSWORD (or blank for no authentication)
+     token = TOKEN (either use token or username and password)
      # ssl_verification = True/False
      # version = foo-1.0
      # components = com1,second component,com3
