@@ -3,6 +3,12 @@ from distutils.version import LooseVersion
 
 import pytest
 
+PUBLIC_JIRA_SERVER = "https://issues.jboss.org"
+
+SKIP_REASON_UNAUTHORIZED = """
+Current public jira server doesn't allow anonymous anymore
+"""
+
 CONFTEST = """
 import pytest
 
@@ -58,7 +64,7 @@ def pytest_collection_modifyitems(session, config, items):
 
 PLUGIN_ARGS = (
     '--jira',
-    '--jira-url', 'https://issues.jboss.org',
+    '--jira-url', PUBLIC_JIRA_SERVER,
 )
 
 
@@ -441,12 +447,12 @@ def test_invalid_authentication_exception(testdir):
     """)
     ARGS = (
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-user', 'user123',
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert '403 Client Error' in result.stdout.str()
+    assert '401 Client Error' in result.stdout.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
@@ -456,7 +462,7 @@ def test_disabled_ssl_verification_pass(testdir):
         '.cfg',
         jira="\n".join([
             '[DEFAULT]',
-            'url = https://issues.jboss.org',
+            "url = " + PUBLIC_JIRA_SERVER,
             'ssl_verification = false',
         ])
     )
@@ -477,7 +483,7 @@ def test_config_file_paths_xfail(testdir):
     homedir = testdir.mkdir('home')
     os.environ['HOME'] = os.getcwd() + '/home'
     homedir.ensure('jira.cfg').write(
-        '[DEFAULT]\nurl = https://issues.jboss.org',
+        '[DEFAULT]\nurl = ' + PUBLIC_JIRA_SERVER,
     )
     assert os.path.isfile(os.getcwd() + '/home/jira.cfg')
     testdir.makepyfile("""
@@ -535,6 +541,7 @@ def test_open_for_different_version_failed(testdir):
     assert_outcomes(result, 0, 0, 1)
 
 
+@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
 def test_get_issue_info_from_remote_passed(testdir):
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile("""
@@ -561,7 +568,7 @@ def test_affected_component_skiped(testdir):
     result = testdir.runpytest(
         '--jira',
         '--jira-url',
-        'https://issues.jboss.org',
+        PUBLIC_JIRA_SERVER,
         '--jira-components',
         'com3',
         'com1',
@@ -569,6 +576,7 @@ def test_affected_component_skiped(testdir):
     assert_outcomes(result, 0, 1, 0)
 
 
+@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
 def test_strategy_ignore_failed(testdir):
     """Invalid issue ID is ignored and test fails"""
     testdir.makeconftest(CONFTEST)
@@ -576,7 +584,7 @@ def test_strategy_ignore_failed(testdir):
         '.cfg',
         jira="\n".join([
             '[DEFAULT]',
-            'url = https://issues.jboss.org',
+            'url = ' + PUBLIC_JIRA_SERVER,
             'marker_strategy = ignore',
             'docs_search = False',
         ])
@@ -592,6 +600,7 @@ def test_strategy_ignore_failed(testdir):
     result.assert_outcomes(0, 0, 1)
 
 
+@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
 def test_strategy_strict_exception(testdir):
     """Invalid issue ID, exception is rised"""
     testdir.makeconftest(CONFTEST)
@@ -606,13 +615,14 @@ def test_strategy_strict_exception(testdir):
     """)
     result = testdir.runpytest(
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-marker-strategy', 'strict',
         '--jira-issue-regex', '[0-9]+-[0-9]+',
     )
     assert "89745-1412789456148865" in result.stdout.str()
 
 
+@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
 def test_strategy_warn_fail(testdir):
     """Invalid issue ID is ignored and warning is written"""
     testdir.makeconftest(CONFTEST)
@@ -620,7 +630,7 @@ def test_strategy_warn_fail(testdir):
         '.cfg',
         jira="\n".join([
             '[DEFAULT]',
-            'url = https://issues.jboss.org',
+            'url = ' + PUBLIC_JIRA_SERVER,
             'marker_strategy = warn',
         ])
     )
@@ -651,12 +661,13 @@ def test_ignored_docs_marker_fail(testdir):
     """)
     result = testdir.runpytest(
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-disable-docs-search',
     )
     assert_outcomes(result, 0, 0, 1)
 
 
+@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
 def test_issue_not_found_considered_open_xfailed(testdir):
     """Issue is open but docs is ignored"""
     testdir.makeconftest(CONFTEST)
@@ -686,7 +697,7 @@ def test_jira_marker_bad_args_due_to_changed_regex(testdir):
     """)
     result = testdir.runpytest(
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-issue-regex', '[0-9]+-[0-9]+',
     )
     text = 'JIRA marker argument `ORG-1382` does not match pattern'
@@ -705,7 +716,7 @@ def test_invalid_jira_marker_strategy_parameter(testdir):
     """)
     result = testdir.runpytest(
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-marker-strategy', 'invalid',
     )
     assert "invalid choice: \'invalid\'" in result.stderr.str()
@@ -726,7 +737,7 @@ def test_custom_resolve_status_fail(testdir):
     """)
     result = testdir.runpytest(
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-resolved-statuses', 'custom-status',
     )
     assert_outcomes(result, 0, 0, 1)
@@ -747,7 +758,7 @@ def test_custom_resolve_status_pass(testdir):
     """)
     result = testdir.runpytest(
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-resolved-statuses', 'custom-status',
     )
     assert_outcomes(result, 1, 0, 0)
@@ -769,7 +780,7 @@ def test_custom_resolve_status_skipped_on_closed_status(testdir):
     """)
     result = testdir.runpytest(
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-resolved-statuses', 'custom-status,some-other',
     )
     assert_outcomes(result, 0, 1, 0)
@@ -801,7 +812,7 @@ def test_run_test_case_false2(testdir):
     testdir.makeconftest(CONFTEST)
     plugin_args = (
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         '--jira-do-not-run-test-case',
     )
     testdir.makepyfile("""
@@ -1020,6 +1031,7 @@ def test_jira_fixture_request_exception(
     )
 
 
+@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
 @pytest.mark.parametrize("ticket", ['ORG-1382', 'Foo-Bar'])
 @pytest.mark.parametrize("return_method, _type", [
     ('--jira-return-metadata', 'JiraIssue'),
@@ -1036,7 +1048,7 @@ def test_jira_fixture_return_metadata(testdir, return_method, _type, ticket):
     """ % (ticket, _type))
     ARGS = (
         '--jira',
-        '--jira-url', 'https://issues.jboss.org',
+        '--jira-url', PUBLIC_JIRA_SERVER,
         return_method
     )
     result = testdir.runpytest(*ARGS)
