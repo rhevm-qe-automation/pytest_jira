@@ -16,5 +16,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install tox
-    - name: Run tox
+    - name: Run linters
+      run: tox -e pep8
+    - name: Run unit tests
       run: tox -e py
