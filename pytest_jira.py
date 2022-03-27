@@ -276,7 +276,7 @@ class JiraMarkerReporter(object):
 
     def _get_marks(self, item):
         marks = []
-        if LooseVersion(pytest.__version__) >= LooseVersion("3.6.0"):
+        if Version(pytest.__version__) >= Version("3.6.0"):
             for mark in item.iter_markers("jira"):
                 marks.append(mark)
         else:
