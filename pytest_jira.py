@@ -11,7 +11,7 @@ Author: James Laska
 import os
 import re
 import sys
-from distutils.version import LooseVersion
+from packaging.version import Version
 from json import JSONDecodeError
 
 import pytest
@@ -91,7 +91,7 @@ class JiraHooks(object):
             return not self.is_affected(issue_id)
 
     def get_marker(self, item):
-        if LooseVersion(pytest.__version__) >= LooseVersion("3.6.0"):
+        if Version(pytest.__version__) >= Version("3.6.0"):
             return item.get_closest_marker("jira")
         else:
             return item.keywords.get("jira")
