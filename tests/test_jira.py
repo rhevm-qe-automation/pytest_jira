@@ -1,5 +1,5 @@
 import os
-from distutils.version import LooseVersion
+from packaging.version import Version
 
 import pytest
 
@@ -916,7 +916,7 @@ def test_xfail_strict(testdir):
 
 
 @pytest.mark.skipif(
-    LooseVersion(pytest.__version__) < LooseVersion("3.0.0"),
+    Version(pytest.__version__) < Version("3.0.0"),
     reason="requires pytest-3 or higher")
 def test_jira_marker_with_parametrize_pytest3(testdir):
     """"""
@@ -936,7 +936,7 @@ def test_jira_marker_with_parametrize_pytest3(testdir):
 
 
 @pytest.mark.skipif(
-    LooseVersion(pytest.__version__) >= LooseVersion("3.0.0"),
+    Version(pytest.__version__) >= Version("3.0.0"),
     reason="requires pytest-2 or lower")
 def test_jira_marker_with_parametrize_pytest2(testdir):
     """"""
