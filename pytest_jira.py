@@ -477,7 +477,7 @@ def pytest_addoption(parser):
     group.addoption('--jira-return-metadata',
                     action='store_true',
                     dest='return_jira_metadata',
-                    default=False,
+                    default=_get_value(config, 'DEFAULT', 'return_jira_metadata'),
                     help='If set, will return Jira issue with ticket metadata'
                     )
 
