@@ -30,6 +30,7 @@ SKIP = 'skip'
 IGNORE = 'ignore'
 PLUGIN_NAME = "jira_plugin"
 PASSWORD_ENV_VAR = 'PYTEST_JIRA_PASSWORD'
+USERNAME_ENV_VAR = 'PYTEST_JIRA_USERNAME'
 
 
 class JiraHooks(object):
@@ -513,7 +514,7 @@ def pytest_configure(config):
     if config.getvalue('jira') and config.getvalue('jira_url'):
         jira_connection = JiraSiteConnection(
             config.getvalue('jira_url'),
-            config.getvalue('jira_username'),
+            os.getenv(USERNAME_ENV_VAR) or config.getvalue('jira_username'),
             os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
             config.getvalue('jira_verify'),
             config.getvalue('jira_token'),
