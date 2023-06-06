@@ -90,7 +90,13 @@ class JiraHooks(object):
         # Skip test if issue remains unresolved
         if self.issue_cache[issue_id] is None:
             return True
-        if self.issue_cache[issue_id]['status'] in self.resolved_statuses and (len(self.resolved_resolutions) == 0 or self.issue_cache[issue_id]['resolution'] in self.resolved_resolutions):
+        if self.issue_cache[issue_id]['status'] in self.resolved_statuses and (
+            # Issue is resolved if resolutions are not specified
+            # Or if the issue's resolution mathces a resolved_resolution
+            len(self.resolved_resolutions) == 0 or \
+            self.issue_cache[issue_id]['resolution'] in \
+            self.resolved_resolutions
+        ):
             return self.fixed_in_version(issue_id)
         else:
             return not self.is_affected(issue_id)
@@ -265,7 +271,8 @@ class JiraSiteConnection(object):
                     v['name'] for v in field.get('fixVersions', set())
                 ),
                 'status': field['status']['name'].lower(),
-                'resolution': field['resolution']['name'].lower() if field['resolution'] else field['resolution'],
+                'resolution': field['resolution']['name'].lower() if
+                field['resolution'] else None,
             }
 
     def get_url(self):
@@ -460,8 +467,11 @@ def pytest_addoption(parser):
     group.addoption('--jira-resolved-resolutions',
                     action='store',
                     dest='jira_resolved_resolutions',
-                    default=_get_value(config, 'DEFAULT', 'resolved_resolutions'),
-                    help='Comma separated list of resolved resolutions (done, fixed)'
+                    default=_get_value(
+                        config, 'DEFAULT', 'resolved_resolutions'
+                    ),
+                    help='Comma separated list of resolved resolutions (done, '
+                         'fixed)'
                     )
     group.addoption('--jira-do-not-run-test-case',
                     action='store_false',
@@ -489,7 +499,9 @@ def pytest_addoption(parser):
     group.addoption('--jira-return-metadata',
                     action='store_true',
                     dest='return_jira_metadata',
-                    default=_get_value(config, 'DEFAULT', 'return_jira_metadata'),
+                    default=_get_value(
+                        config, 'DEFAULT', 'return_jira_metadata'
+                    ),
                     help='If set, will return Jira issue with ticket metadata'
                     )
 
