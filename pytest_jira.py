@@ -41,6 +41,7 @@ class JiraHooks(object):
             version=None,
             components=None,
             resolved_statuses=None,
+            resolved_resolutions=None,
             run_test_case=DEFAULT_RUN_TEST_CASE,
             strict_xfail=False,
             connection_error_strategy=None,
@@ -54,6 +55,10 @@ class JiraHooks(object):
             self.resolved_statuses = resolved_statuses
         else:
             self.resolved_statuses = DEFAULT_RESOLVE_STATUSES
+        if resolved_resolutions:
+            self.resolved_resolutions = resolved_resolutions
+        else:
+            self.resolved_resolutions = []
         self.run_test_case = run_test_case
         self.connection_error_strategy = connection_error_strategy
         # Speed up JIRA lookups for duplicate issues
@@ -85,8 +90,13 @@ class JiraHooks(object):
         # Skip test if issue remains unresolved
         if self.issue_cache[issue_id] is None:
             return True
-
-        if self.issue_cache[issue_id]['status'] in self.resolved_statuses:
+        if self.issue_cache[issue_id]['status'] in self.resolved_statuses and (
+            # Issue is resolved if resolutions are not specified
+            # Or if the issue's resolution mathces a resolved_resolution
+            len(self.resolved_resolutions) == 0 or \
+            self.issue_cache[issue_id]['resolution'] in \
+            self.resolved_resolutions
+        ):
             return self.fixed_in_version(issue_id)
         else:
             return not self.is_affected(issue_id)
@@ -261,6 +271,8 @@ class JiraSiteConnection(object):
                     v['name'] for v in field.get('fixVersions', set())
                 ),
                 'status': field['status']['name'].lower(),
+                'resolution': field['resolution']['name'].lower() if
+                field['resolution'] else None,
             }
 
     def get_url(self):
@@ -452,6 +464,15 @@ def pytest_addoption(parser):
                     help='Comma separated list of resolved statuses (closed, '
                          'resolved)'
                     )
+    group.addoption('--jira-resolved-resolutions',
+                    action='store',
+                    dest='jira_resolved_resolutions',
+                    default=_get_value(
+                        config, 'DEFAULT', 'resolved_resolutions'
+                    ),
+                    help='Comma separated list of resolved resolutions (done, '
+                         'fixed)'
+                    )
     group.addoption('--jira-do-not-run-test-case',
                     action='store_false',
                     dest='jira_run_test_case',
@@ -479,7 +500,8 @@ def pytest_addoption(parser):
                     action='store_true',
                     dest='return_jira_metadata',
                     default=_get_value(
-                        config, 'DEFAULT', 'return_jira_metadata'),
+                        config, 'DEFAULT', 'return_jira_metadata'
+                    ),
                     help='If set, will return Jira issue with ticket metadata'
                     )
 
@@ -512,6 +534,15 @@ def pytest_configure(config):
     if not resolved_statuses:
         resolved_statuses = list(DEFAULT_RESOLVE_STATUSES)
 
+    resolved_resolutions = config.getvalue('jira_resolved_resolutions')
+    if isinstance(resolved_resolutions, six.string_types):
+        resolved_resolutions = [
+            s.strip().lower() for s in resolved_resolutions.split(',')
+            if s.strip()
+        ]
+    if not resolved_resolutions:
+        resolved_resolutions = []
+
     if config.getvalue('jira') and config.getvalue('jira_url'):
         jira_connection = JiraSiteConnection(
             config.getvalue('jira_url'),
@@ -532,6 +563,7 @@ def pytest_configure(config):
             config.getvalue('jira_product_version'),
             components,
             resolved_statuses,
+            resolved_resolutions,
             config.getvalue('jira_run_test_case'),
             config.getini("xfail_strict"),
             config.getvalue('jira_connection_error_strategy'),

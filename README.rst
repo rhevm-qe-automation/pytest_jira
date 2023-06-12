@@ -125,6 +125,8 @@ If you specify version, open issues will be **unresolved** only if they also aff
 Even when the issue is closed, but your version was affected and it was not fixed for your version,
 the issue will be considered **unresolved**.
 
+If you specify fixed resolutions closed issues will be **unresolved** if they do not also have a **resolved** resolution.
+
 Fixture usage
 -------------
 
@@ -181,7 +183,7 @@ Usage
 
      [DEFAULT]
      url = https://jira.atlassian.com
-     username = USERNAME (or blank for no authentication
+     username = USERNAME (or blank for no authentication)
      password = PASSWORD (or blank for no authentication)
      token = TOKEN (either use token or username and password)
      # ssl_verification = True/False
@@ -191,6 +193,7 @@ Usage
      # docs_search = False (disable searching for issue id in docs)
      # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
      # resolved_statuses = comma separated list of statuses (closed, resolved)
+     # resolved_resolutions = comma separated list of resolutions (done, fixed)
      # run_test_case = True (default value for 'run' parameter)
      # connection_error_strategy [strict|skip|ignore] Choose how to handle connection errors
      # return_jira_metadata = False (return Jira issue with metadata instead of boolean result)

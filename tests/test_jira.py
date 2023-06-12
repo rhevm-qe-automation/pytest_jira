@@ -52,6 +52,20 @@ FAKE_ISSUES = {
         "fixed_versions": set(["foo-0.2"]),
         "status": "closed",
     },
+    "ORG-1515": {
+        "components": set(['component2', 'component3']),
+        "versions": set(["foo-0.1", "foo-0.2"]),
+        "fixed_versions": set(["foo-0.2"]),
+        "status": "closed",
+        "resolution": "won't fix"
+    },
+    "ORG-1516": {
+        "components": set(['component2', 'component3']),
+        "versions": set(["foo-0.1", "foo-0.2"]),
+        "fixed_versions": set(["foo-0.2"]),
+        "status": "closed",
+        "resolution": "done"
+    },
 }
 
 
@@ -1050,6 +1064,68 @@ def test_jira_fixture_return_metadata(testdir, return_method, _type, ticket):
         '--jira',
         '--jira-url', PUBLIC_JIRA_SERVER,
         return_method
+    )
+    result = testdir.runpytest(*ARGS)
+    result.assert_outcomes(1, 0, 0)
+
+
+def test_closed_nofix_nooption(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1515", run=False)
+        def test_pass():
+            assert False
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(0, 0, 1)
+
+
+def test_closed_nofix_option(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1515", run=False)
+        def test_pass():
+            assert False
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', PUBLIC_JIRA_SERVER,
+        '--jira-resolved-resolutions', 'done,fixed,completed'
+    )
+    result = testdir.runpytest(*ARGS)
+    result.assert_outcomes(0, 1, 0)
+
+
+def test_closed_fixed_nooption(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1516", run=False)
+        def test_pass():
+            assert True
+    """)
+    result = testdir.runpytest(*PLUGIN_ARGS)
+    result.assert_outcomes(1, 0, 0)
+
+
+def test_closed_fixed_option(testdir):
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile("""
+        import pytest
+
+        @pytest.mark.jira("ORG-1516", run=False)
+        def test_pass():
+            assert True
+    """)
+    ARGS = (
+        '--jira',
+        '--jira-url', PUBLIC_JIRA_SERVER,
+        '--jira-resolved-resolutions', 'done,fixed,completed'
     )
     result = testdir.runpytest(*ARGS)
     result.assert_outcomes(1, 0, 0)
