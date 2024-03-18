@@ -31,6 +31,7 @@ IGNORE = 'ignore'
 PLUGIN_NAME = "jira_plugin"
 PASSWORD_ENV_VAR = 'PYTEST_JIRA_PASSWORD'
 USERNAME_ENV_VAR = 'PYTEST_JIRA_USERNAME'
+TOKEN_ENV_VAR = 'PYTEST_JIRA_TOKEN'
 
 
 class JiraHooks(object):
@@ -549,7 +550,7 @@ def pytest_configure(config):
             os.getenv(USERNAME_ENV_VAR) or config.getvalue('jira_username'),
             os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
             config.getvalue('jira_verify'),
-            config.getvalue('jira_token'),
+            os.getenv(TOKEN_ENV_VAR) or config.getvalue('jira_token'),
         )
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
