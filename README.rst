@@ -152,7 +152,7 @@ Requires
 -  pytest >= 2.2.3
 -  requests >= 2.13.0
 -  six
--  retry>=0.9.2
+-  retry2>=0.9.5
 -  marshmallow>=3.2.0
 
 Installation
@@ -232,4 +232,3 @@ In order to execute tests run
 .. code:: sh
 
   $ tox
-
