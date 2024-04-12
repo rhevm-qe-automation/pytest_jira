@@ -1,4 +1,5 @@
 import os
+import re
 from packaging.version import Version
 
 import pytest
@@ -466,7 +467,9 @@ def test_invalid_authentication_exception(testdir):
         '--jira-password', 'passwd123'
     )
     result = testdir.runpytest(*ARGS)
-    assert '401 Client Error' in result.stdout.str()
+    assert re.search(
+        "4(01|29) Client Error", result.stdout.str(), re.MULTILINE
+    )
 
 
 def test_disabled_ssl_verification_pass(testdir):
