@@ -1,0 +1,33 @@
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: pytest-jira
+  title: PyTest Jira Plugin
+  description: This plugin allows you to skip test cases based on the status of related Jira issue.
+  links:
+    - title: docs
+      url: https://github.com/rhevm-qe-automation/pytest_jira/blob/master/README.rst
+      icon: docs
+    - title: code
+      url: https://github.com/rhevm-qe-automation/pytest_jira
+      icon: github
+    - title: pypi
+      url: https://pypi.org/project/pytest-jira
+  tags:
+    # Ecosystem
+    - public
+    - test-framework
+    # Programming Languages
+    - python
+    # Tool / Service
+    - jira
+    - pytest
+  namespace: quality-community
+  annotations:
+    # For GitHub repositories
+    github.com/project-slug: rhevm-qe-automation/pytest_jira
+spec:
+  type: library
+  lifecycle: production
+  owner: group:redhat/cnv-qe-infra
