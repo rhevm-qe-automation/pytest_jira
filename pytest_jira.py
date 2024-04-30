@@ -29,6 +29,7 @@ STRICT = 'strict'
 SKIP = 'skip'
 IGNORE = 'ignore'
 PLUGIN_NAME = "jira_plugin"
+URL_ENV_VAR = 'PYTEST_JIRA_URL'
 PASSWORD_ENV_VAR = 'PYTEST_JIRA_PASSWORD'
 USERNAME_ENV_VAR = 'PYTEST_JIRA_USERNAME'
 TOKEN_ENV_VAR = 'PYTEST_JIRA_TOKEN'
@@ -544,9 +545,11 @@ def pytest_configure(config):
     if not resolved_resolutions:
         resolved_resolutions = []
 
-    if config.getvalue('jira') and config.getvalue('jira_url'):
+    if config.getvalue('jira') and (
+        os.getenv(URL_ENV_VAR) or config.getvalue('jira_url')
+    ):
         jira_connection = JiraSiteConnection(
-            config.getvalue('jira_url'),
+            os.getenv(URL_ENV_VAR) or config.getvalue('jira_url'),
             os.getenv(USERNAME_ENV_VAR) or config.getvalue('jira_username'),
             os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
             config.getvalue('jira_verify'),

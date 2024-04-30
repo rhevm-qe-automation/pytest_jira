@@ -198,11 +198,11 @@ Usage
      # connection_error_strategy [strict|skip|ignore] Choose how to handle connection errors
      # return_jira_metadata = False (return Jira issue with metadata instead of boolean result)
 
-   You can set the password and username fields by setting the PYTEST_JIRA_PASSWORD, PYTEST_JIRA_USERNAME and
-   PYTEST_JIRA_TOKEN environment variables:
+   Alternatively, you can set the url, password, username and token fields using relevant environment variables:
 
     .. code:: sh
 
+      export PYTEST_JIRA_URL="https://..."
       export PYTEST_JIRA_PASSWORD="FOO"
       export PYTEST_JIRA_USERNAME="BAR"
       export PYTEST_JIRA_TOKEN="TOKEN"
