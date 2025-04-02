@@ -95,8 +95,8 @@ class JiraHooks(object):
         if self.issue_cache[issue_id]['status'] in self.resolved_statuses and (
             # Issue is resolved if resolutions are not specified
             # Or if the issue's resolution mathces a resolved_resolution
-            len(self.resolved_resolutions) == 0 or \
-            self.issue_cache[issue_id]['resolution'] in \
+            len(self.resolved_resolutions) == 0 or
+            self.issue_cache[issue_id]['resolution'] in
             self.resolved_resolutions
         ):
             return self.fixed_in_version(issue_id)
