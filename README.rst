@@ -195,7 +195,7 @@ Usage
      # resolved_statuses = comma separated list of statuses (closed, resolved)
      # resolved_resolutions = comma separated list of resolutions (done, fixed)
      # run_test_case = True (default value for 'run' parameter)
-     # connection_error_strategy [strict|skip|ignore] Choose how to handle connection errors
+     # error_strategy [strict|skip|ignore] Choose how to handle connection errors
      # return_jira_metadata = False (return Jira issue with metadata instead of boolean result)
 
    Alternatively, you can set the url, password, username and token fields using relevant environment variables:
