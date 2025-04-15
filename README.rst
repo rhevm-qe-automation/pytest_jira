@@ -197,6 +197,8 @@ Usage
      # run_test_case = True (default value for 'run' parameter)
      # error_strategy [strict|skip|ignore] Choose how to handle connection errors
      # return_jira_metadata = False (return Jira issue with metadata instead of boolean result)
+     # connection_retry_total = 5 (number of retries)
+     # connection_retry_backoff_factor = 0.2 ( connection retry backoff factor)
 
    Alternatively, you can set the url, password, username and token fields using relevant environment variables:
 

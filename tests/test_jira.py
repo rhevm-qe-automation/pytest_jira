@@ -999,7 +999,9 @@ def test_marker_error_strategy(
         '--jira-url', 'http://foo.bar.com',
         '--jira-user', 'user123',
         '--jira-password', 'passwd123',
-        '--jira-connection-error-strategy', error_strategy
+        '--jira-connection-error-strategy', error_strategy,
+        '--jira-connection-retry-total', 1,
+        '--jira-connection-retry-backoff-factor', 0.2,
     )
     result = testdir.runpytest(*ARGS)
     assert_outcomes(
@@ -1036,7 +1038,9 @@ def test_jira_fixture_request_exception(
         '--jira-url', 'http://foo.bar.com',
         '--jira-user', 'user123',
         '--jira-password', 'passwd123',
-        '--jira-connection-error-strategy', error_strategy
+        '--jira-connection-error-strategy', error_strategy,
+        '--jira-connection-retry-total', 2,
+        '--jira-connection-retry-backoff-factor', 0.1,
     )
     result = testdir.runpytest(*ARGS)
     assert_outcomes(

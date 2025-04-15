@@ -16,6 +16,7 @@ from json import JSONDecodeError
 
 import pytest
 import requests
+import urllib3
 import six
 from retry import retry
 
@@ -212,20 +213,37 @@ class JiraSiteConnection(object):
         else:
             self.basic_auth = None
 
+        self.session = requests.Session()
+
+    def setup_retries(self, total, backoff_factor):
+        retries = urllib3.Retry(
+            total=total,
+            backoff_factor=backoff_factor,
+            respect_retry_after_header=True,  # use retry-after header
+            status_forcelist=urllib3.Retry.RETRY_AFTER_STATUS_CODES,
+            allowed_methods={'GET', },
+        )
+        self.session.mount(
+            self.url,
+            requests.adapters.HTTPAdapter(max_retries=retries)
+        )
+
     def _jira_request(self, url, method='get', **kwargs):
         if 'verify' not in kwargs:
             kwargs['verify'] = self.verify
 
         if self.token:
-            rsp = requests.request(method, url, headers=self.headers, **kwargs)
+            rsp = self.session.request(
+                method, url, headers=self.headers, **kwargs
+            )
 
         elif self.basic_auth:
-            rsp = requests.request(
+            rsp = self.session.request(
                 method, url, auth=self.basic_auth, **kwargs
             )
 
         else:
-            rsp = requests.request(method, url, **kwargs)
+            rsp = self.session.request(method, url, **kwargs)
         rsp.raise_for_status()
         return rsp
 
@@ -498,6 +516,25 @@ def pytest_addoption(parser):
                     skip - skip any test that has a marker
                     """
                     )
+    group.addoption('--jira-connection-retry-total',
+                    action='store',
+                    type=int,
+                    dest='jira_connection_retry_total',
+                    default=_get_value(
+                        config, 'DEFAULT', 'connection_retry_total', 5
+                    ),
+                    help='Number of connection retries'
+                    )
+    group.addoption('--jira-connection-retry-backoff-factor',
+                    action='store',
+                    type=float,
+                    dest='jira_connection_retry_backoff_factor',
+                    default=_get_value(
+                        config, 'DEFAULT',
+                        'connection_retry_backoff_factor', 0.2
+                    ),
+                    help='Number of connection retries'
+                    )
     group.addoption('--jira-return-metadata',
                     action='store_true',
                     dest='return_jira_metadata',
@@ -554,6 +591,10 @@ def pytest_configure(config):
             os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
             config.getvalue('jira_verify'),
             os.getenv(TOKEN_ENV_VAR) or config.getvalue('jira_token'),
+        )
+        jira_connection.setup_retries(
+            config.getvalue('jira_connection_retry_total'),
+            config.getvalue('jira_connection_retry_backoff_factor')
         )
         jira_marker = JiraMarkerReporter(
             config.getvalue('jira_marker_strategy'),
