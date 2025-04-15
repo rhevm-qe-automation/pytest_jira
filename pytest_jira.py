@@ -11,44 +11,44 @@ Author: James Laska
 import os
 import re
 import sys
-from packaging.version import Version
 from json import JSONDecodeError
 
 import pytest
 import requests
-import urllib3
 import six
+import urllib3
+from packaging.version import Version
 from retry import retry
 
 from issue_model import JiraIssue, JiraIssueSchema
 
-DEFAULT_RESOLVE_STATUSES = 'closed', 'resolved'
+DEFAULT_RESOLVE_STATUSES = "closed", "resolved"
 DEFAULT_RUN_TEST_CASE = True
-CONNECTION_SKIP_MESSAGE = 'Jira connection issue, skipping test: %s'
-CONNECTION_ERROR_FLAG_NAME = '--jira-connection-error-strategy'
-STRICT = 'strict'
-SKIP = 'skip'
-IGNORE = 'ignore'
+CONNECTION_SKIP_MESSAGE = "Jira connection issue, skipping test: %s"
+CONNECTION_ERROR_FLAG_NAME = "--jira-connection-error-strategy"
+STRICT = "strict"
+SKIP = "skip"
+IGNORE = "ignore"
 PLUGIN_NAME = "jira_plugin"
-URL_ENV_VAR = 'PYTEST_JIRA_URL'
-PASSWORD_ENV_VAR = 'PYTEST_JIRA_PASSWORD'
-USERNAME_ENV_VAR = 'PYTEST_JIRA_USERNAME'
-TOKEN_ENV_VAR = 'PYTEST_JIRA_TOKEN'
+URL_ENV_VAR = "PYTEST_JIRA_URL"
+PASSWORD_ENV_VAR = "PYTEST_JIRA_PASSWORD"
+USERNAME_ENV_VAR = "PYTEST_JIRA_USERNAME"
+TOKEN_ENV_VAR = "PYTEST_JIRA_TOKEN"
 
 
 class JiraHooks(object):
     def __init__(
-            self,
-            connection,
-            marker,
-            version=None,
-            components=None,
-            resolved_statuses=None,
-            resolved_resolutions=None,
-            run_test_case=DEFAULT_RUN_TEST_CASE,
-            strict_xfail=False,
-            connection_error_strategy=None,
-            return_jira_metadata=False
+        self,
+        connection,
+        marker,
+        version=None,
+        components=None,
+        resolved_statuses=None,
+        resolved_resolutions=None,
+        run_test_case=DEFAULT_RUN_TEST_CASE,
+        strict_xfail=False,
+        connection_error_strategy=None,
+        return_jira_metadata=False,
     ):
         self.conn = connection
         self.mark = marker
@@ -82,8 +82,10 @@ class JiraHooks(object):
                     issue_id, self.return_jira_metadata
                 )
             except requests.RequestException as e:
-                if not hasattr(e.response, 'status_code') \
-                        or not e.response.status_code == 404:
+                if (
+                    not hasattr(e.response, "status_code")
+                    or not e.response.status_code == 404
+                ):
                     raise
                 self.issue_cache[issue_id] = self.mark.get_default(issue_id)
         if self.return_jira_metadata:
@@ -93,12 +95,12 @@ class JiraHooks(object):
         # Skip test if issue remains unresolved
         if self.issue_cache[issue_id] is None:
             return True
-        if self.issue_cache[issue_id]['status'] in self.resolved_statuses and (
+        if self.issue_cache[issue_id]["status"] in self.resolved_statuses and (
             # Issue is resolved if resolutions are not specified
             # Or if the issue's resolution mathces a resolved_resolution
-            len(self.resolved_resolutions) == 0 or
-            self.issue_cache[issue_id]['resolution'] in
-            self.resolved_resolutions
+            len(self.resolved_resolutions) == 0
+            or self.issue_cache[issue_id]["resolution"]
+            in self.resolved_resolutions
         ):
             return self.fixed_in_version(issue_id)
         else:
@@ -121,7 +123,7 @@ class JiraHooks(object):
 
             marker = self.get_marker(item)
             if marker:
-                jira_run = marker.kwargs.get('run', jira_run)
+                jira_run = marker.kwargs.get("run", jira_run)
 
             for issue_id, skipif in jira_ids:
                 try:
@@ -132,8 +134,10 @@ class JiraHooks(object):
                         else:
                             if not skipif:
                                 continue
-                        reason = "%s/browse/%s" % \
-                                 (self.conn.get_url(), issue_id)
+                        reason = "%s/browse/%s" % (
+                            self.conn.get_url(),
+                            issue_id,
+                        )
                         if jira_run:
                             item.add_marker(pytest.mark.xfail(reason=reason))
                         else:
@@ -142,8 +146,8 @@ class JiraHooks(object):
                     if self.connection_error_strategy == STRICT:
                         raise
                     elif self.connection_error_strategy == SKIP:
-                        item.add_marker(pytest.mark.skip(
-                            reason=CONNECTION_SKIP_MESSAGE % e)
+                        item.add_marker(
+                            pytest.mark.skip(reason=CONNECTION_SKIP_MESSAGE % e)
                         )
                     else:
                         return
@@ -157,8 +161,8 @@ class JiraHooks(object):
         """
         if not self.version:
             return True
-        affected = self.issue_cache[issue_id].get('versions')
-        fixed = self.issue_cache[issue_id].get('fixed_versions')
+        affected = self.issue_cache[issue_id].get("versions")
+        fixed = self.issue_cache[issue_id].get("fixed_versions")
         return self.version not in (affected - fixed)
 
     def is_affected(self, issue_id):
@@ -168,19 +172,18 @@ class JiraHooks(object):
             version is affected (or not specified)
         else return False
         """
-        return (
-            self._affected_version(issue_id) and
-            self._affected_components(issue_id)
+        return self._affected_version(issue_id) and self._affected_components(
+            issue_id
         )
 
     def _affected_version(self, issue_id):
-        affected = self.issue_cache[issue_id].get('versions')
+        affected = self.issue_cache[issue_id].get("versions")
         if not self.version or not affected:
             return True
         return self.version in affected
 
     def _affected_components(self, issue_id):
-        affected = self.issue_cache[issue_id].get('components')
+        affected = self.issue_cache[issue_id].get("components")
         if not self.components or not affected:
             return True
         return bool(self.components.intersection(affected))
@@ -188,11 +191,12 @@ class JiraHooks(object):
 
 class JiraSiteConnection(object):
     def __init__(
-            self, url,
-            username=None,
-            password=None,
-            verify=True,
-            token=None,
+        self,
+        url,
+        username=None,
+        password=None,
+        verify=True,
+        token=None,
     ):
         self.url = url
         self.username = username
@@ -204,7 +208,7 @@ class JiraSiteConnection(object):
 
         if self.token:
             token_bearer = f"Bearer {self.token}"
-            self.headers = {'Authorization': token_bearer}
+            self.headers = {"Authorization": token_bearer}
 
         # Setup basic_auth
         elif self.username and self.password:
@@ -221,16 +225,17 @@ class JiraSiteConnection(object):
             backoff_factor=backoff_factor,
             respect_retry_after_header=True,  # use retry-after header
             status_forcelist=urllib3.Retry.RETRY_AFTER_STATUS_CODES,
-            allowed_methods={'GET', },
+            allowed_methods={
+                "GET",
+            },
         )
         self.session.mount(
-            self.url,
-            requests.adapters.HTTPAdapter(max_retries=retries)
+            self.url, requests.adapters.HTTPAdapter(max_retries=retries)
         )
 
-    def _jira_request(self, url, method='get', **kwargs):
-        if 'verify' not in kwargs:
-            kwargs['verify'] = self.verify
+    def _jira_request(self, url, method="get", **kwargs):
+        if "verify" not in kwargs:
+            kwargs["verify"] = self.verify
 
         if self.token:
             rsp = self.session.request(
@@ -249,23 +254,26 @@ class JiraSiteConnection(object):
 
     def check_connection(self):
         # This URL work for both anonymous and logged in users
-        auth_url = '{url}/rest/api/2/mypermissions'.format(url=self.url)
+        auth_url = "{url}/rest/api/2/mypermissions".format(url=self.url)
         r = self._jira_request(
-            auth_url, params={'permissions': 'BROWSE_PROJECTS'}
+            auth_url, params={"permissions": "BROWSE_PROJECTS"}
         )
 
         # For some reason in case on invalid credentials the status is still
         # 200 but the body is empty
         if not r.text:
             raise Exception(
-                'Could not connect to {url}. Invalid credentials'.format(
-                    url=self.url)
+                "Could not connect to {url}. Invalid credentials".format(
+                    url=self.url
+                )
             )
 
         # If the user does not have sufficient permissions to browse issues
-        elif not r.json()['permissions']['BROWSE_PROJECTS']['havePermission']:
-            raise Exception('Current user does not have sufficient permissions'
-                            ' to view issue')
+        elif not r.json()["permissions"]["BROWSE_PROJECTS"]["havePermission"]:
+            raise Exception(
+                "Current user does not have sufficient permissions"
+                " to view issue"
+            )
         else:
             self.is_connected = True
             return True
@@ -274,26 +282,32 @@ class JiraSiteConnection(object):
     def get_issue(self, issue_id, return_jira_metadata):
         if not self.is_connected:
             self.check_connection()
-        issue_url = '{url}/rest/api/2/issue/{issue_id}'.format(
+        issue_url = "{url}/rest/api/2/issue/{issue_id}".format(
             url=self.url, issue_id=issue_id
         )
         issue = self._jira_request(issue_url).json()
-        field = issue['fields']
-        return field if return_jira_metadata else \
-            {
-                'components': set(
-                    c['name'] for c in field.get('components', set())
+        field = issue["fields"]
+        return (
+            field
+            if return_jira_metadata
+            else {
+                "components": set(
+                    c["name"] for c in field.get("components", set())
                 ),
-                'versions': set(
-                    v['name'] for v in field.get('versions', set())
+                "versions": set(
+                    v["name"] for v in field.get("versions", set())
                 ),
-                'fixed_versions': set(
-                    v['name'] for v in field.get('fixVersions', set())
+                "fixed_versions": set(
+                    v["name"] for v in field.get("fixVersions", set())
                 ),
-                'status': field['status']['name'].lower(),
-                'resolution': field['resolution']['name'].lower() if
-                field['resolution'] else None,
+                "status": field["status"]["name"].lower(),
+                "resolution": (
+                    field["resolution"]["name"].lower()
+                    if field["resolution"]
+                    else None
+                ),
             }
+        )
 
     def get_url(self):
         return self.url
@@ -313,8 +327,8 @@ class JiraMarkerReporter(object):
             for mark in item.iter_markers("jira"):
                 marks.append(mark)
         else:
-            if 'jira' in item.keywords:
-                marker = item.keywords['jira']
+            if "jira" in item.keywords:
+                marker = item.keywords["jira"]
                 # process markers independently
                 if not isinstance(marker, (list, tuple)):
                     marker = [marker]
@@ -325,11 +339,10 @@ class JiraMarkerReporter(object):
     def get_jira_issues(self, item):
         jira_ids = []
         for mark in self._get_marks(item):
-            skip_if = mark.kwargs.get('skipif', True)
+            skip_if = mark.kwargs.get("skipif", True)
 
             if len(mark.args) == 0:
-                raise TypeError(
-                    'JIRA marker requires one, or more, arguments')
+                raise TypeError("JIRA marker requires one, or more, arguments")
 
             for arg in mark.args:
                 jira_ids.append((arg, skip_if))
@@ -347,23 +360,17 @@ class JiraMarkerReporter(object):
         for jid, _ in set(jira_ids):
             if not self.issue_pattern.match(jid):
                 raise ValueError(
-                    'JIRA marker argument `%s` does not match pattern' % jid
+                    "JIRA marker argument `%s` does not match pattern" % jid
                 )
-        return list(
-            set(jira_ids)
-        )
+        return list(set(jira_ids))
 
     def get_default(self, jid):
-        if self.strategy == 'open':
-            return {'status': 'open'}
-        if self.strategy == 'strict':
-            raise ValueError(
-                'JIRA marker argument `%s` was not found' % jid
-            )
-        if self.strategy == 'warn':
-            sys.stderr.write(
-                'JIRA marker argument `%s` was not found' % jid
-            )
+        if self.strategy == "open":
+            return {"status": "open"}
+        if self.strategy == "strict":
+            raise ValueError("JIRA marker argument `%s` was not found" % jid)
+        if self.strategy == "warn":
+            sys.stderr.write("JIRA marker argument `%s` was not found" % jid)
         return None
 
 
@@ -387,162 +394,181 @@ def pytest_addoption(parser):
 
     :param parser: Command line options.
     """
-    group = parser.getgroup('JIRA integration')
-    group.addoption('--jira',
-                    action='store_true',
-                    default=False,
-                    dest='jira',
-                    help='Enable JIRA integration.')
+    group = parser.getgroup("JIRA integration")
+    group.addoption(
+        "--jira",
+        action="store_true",
+        default=False,
+        dest="jira",
+        help="Enable JIRA integration.",
+    )
 
     # FIXME - Change to a credentials.yaml ?
     config = six.moves.configparser.ConfigParser()
-    config.read([
-        os.path.join('/', 'etc', 'jira.cfg'),
-        os.path.join(str(parser.extra_info['rootdir']), 'jira.cfg'),
-        os.path.expanduser(os.path.join('~', 'jira.cfg')),
-        'jira.cfg',
-    ])
+    config.read(
+        [
+            os.path.join("/", "etc", "jira.cfg"),
+            os.path.join(str(parser.extra_info["rootdir"]), "jira.cfg"),
+            os.path.expanduser(os.path.join("~", "jira.cfg")),
+            "jira.cfg",
+        ]
+    )
 
-    group.addoption('--jira-url',
-                    action='store',
-                    dest='jira_url',
-                    default=_get_value(config, 'DEFAULT', 'url'),
-                    metavar='url',
-                    help='JIRA url (default: %(default)s)')
-    group.addoption('--jira-user',
-                    action='store',
-                    dest='jira_username',
-                    default=_get_value(config, 'DEFAULT', 'username'),
-                    metavar='username',
-                    help='JIRA username (default: %(default)s)')
-    group.addoption('--jira-password',
-                    action='store',
-                    dest='jira_password',
-                    default=_get_value(config, 'DEFAULT', 'password'),
-                    metavar='password',
-                    help='JIRA password.')
-    group.addoption('--jira-token',
-                    action='store',
-                    dest='jira_token',
-                    default=_get_value(config, 'DEFAULT', 'token'),
-                    metavar='token',
-                    help='JIRA token.')
-    group.addoption('--jira-no-ssl-verify',
-                    action='store_false',
-                    dest='jira_verify',
-                    default=_get_bool(
-                        config, 'DEFAULT', 'ssl_verification', True,
-                    ),
-                    help='Disable SSL verification to Jira',
-                    )
-    group.addoption('--jira-components',
-                    action='store',
-                    nargs='+',
-                    dest='jira_components',
-                    default=_get_value(config, 'DEFAULT', 'components', ''),
-                    help='Used components'
-                    )
-    group.addoption('--jira-product-version',
-                    action='store',
-                    dest='jira_product_version',
-                    default=_get_value(config, 'DEFAULT', 'version'),
-                    help='Used version'
-                    )
-    group.addoption('--jira-marker-strategy',
-                    action='store',
-                    dest='jira_marker_strategy',
-                    default=_get_value(
-                        config, 'DEFAULT', 'marker_strategy', 'open'
-                    ),
-                    choices=['open', 'strict', 'ignore', 'warn'],
-                    help="""Action if issue ID was not found
+    group.addoption(
+        "--jira-url",
+        action="store",
+        dest="jira_url",
+        default=_get_value(config, "DEFAULT", "url"),
+        metavar="url",
+        help="JIRA url (default: %(default)s)",
+    )
+    group.addoption(
+        "--jira-user",
+        action="store",
+        dest="jira_username",
+        default=_get_value(config, "DEFAULT", "username"),
+        metavar="username",
+        help="JIRA username (default: %(default)s)",
+    )
+    group.addoption(
+        "--jira-password",
+        action="store",
+        dest="jira_password",
+        default=_get_value(config, "DEFAULT", "password"),
+        metavar="password",
+        help="JIRA password.",
+    )
+    group.addoption(
+        "--jira-token",
+        action="store",
+        dest="jira_token",
+        default=_get_value(config, "DEFAULT", "token"),
+        metavar="token",
+        help="JIRA token.",
+    )
+    group.addoption(
+        "--jira-no-ssl-verify",
+        action="store_false",
+        dest="jira_verify",
+        default=_get_bool(
+            config,
+            "DEFAULT",
+            "ssl_verification",
+            True,
+        ),
+        help="Disable SSL verification to Jira",
+    )
+    group.addoption(
+        "--jira-components",
+        action="store",
+        nargs="+",
+        dest="jira_components",
+        default=_get_value(config, "DEFAULT", "components", ""),
+        help="Used components",
+    )
+    group.addoption(
+        "--jira-product-version",
+        action="store",
+        dest="jira_product_version",
+        default=_get_value(config, "DEFAULT", "version"),
+        help="Used version",
+    )
+    group.addoption(
+        "--jira-marker-strategy",
+        action="store",
+        dest="jira_marker_strategy",
+        default=_get_value(config, "DEFAULT", "marker_strategy", "open"),
+        choices=["open", "strict", "ignore", "warn"],
+        help="""Action if issue ID was not found
                     open - issue is considered as open (default)
                     strict - raise an exception
                     ignore - issue id is ignored
                     warn - write error message and ignore
                     """,
-                    )
-    group.addoption('--jira-disable-docs-search',
-                    action='store_false',
-                    dest='jira_docs',
-                    default=_get_bool(config, 'DEFAULT', 'docs_search', True),
-                    help='Issue ID in doc strings will be ignored'
-                    )
-    group.addoption('--jira-issue-regex',
-                    action='store',
-                    dest='jira_regex',
-                    default=_get_value(config, 'DEFAULT', 'issue_regex'),
-                    help='Replace default `[A-Z]+-[0-9]+` regular expression'
-                    )
-    group.addoption('--jira-resolved-statuses',
-                    action='store',
-                    dest='jira_resolved_statuses',
-                    default=_get_value(
-                        config, 'DEFAULT', 'resolved_statuses',
-                        ','.join(DEFAULT_RESOLVE_STATUSES),
-                    ),
-                    help='Comma separated list of resolved statuses (closed, '
-                         'resolved)'
-                    )
-    group.addoption('--jira-resolved-resolutions',
-                    action='store',
-                    dest='jira_resolved_resolutions',
-                    default=_get_value(
-                        config, 'DEFAULT', 'resolved_resolutions'
-                    ),
-                    help='Comma separated list of resolved resolutions (done, '
-                         'fixed)'
-                    )
-    group.addoption('--jira-do-not-run-test-case',
-                    action='store_false',
-                    dest='jira_run_test_case',
-                    default=_get_bool(
-                        config, 'DEFAULT', 'run_test_case',
-                        DEFAULT_RUN_TEST_CASE,
-                    ),
-                    help='If set and test is marked by Jira plugin, such '
-                         'test case is not executed.'
-                    )
-    group.addoption(CONNECTION_ERROR_FLAG_NAME,
-                    action='store',
-                    dest='jira_connection_error_strategy',
-                    default=_get_value(
-                        config, 'DEFAULT', 'error_strategy', 'strict'
-                    ),
-                    choices=[STRICT, SKIP, IGNORE],
-                    help="""Action if there is a connection issue
+    )
+    group.addoption(
+        "--jira-disable-docs-search",
+        action="store_false",
+        dest="jira_docs",
+        default=_get_bool(config, "DEFAULT", "docs_search", True),
+        help="Issue ID in doc strings will be ignored",
+    )
+    group.addoption(
+        "--jira-issue-regex",
+        action="store",
+        dest="jira_regex",
+        default=_get_value(config, "DEFAULT", "issue_regex"),
+        help="Replace default `[A-Z]+-[0-9]+` regular expression",
+    )
+    group.addoption(
+        "--jira-resolved-statuses",
+        action="store",
+        dest="jira_resolved_statuses",
+        default=_get_value(
+            config,
+            "DEFAULT",
+            "resolved_statuses",
+            ",".join(DEFAULT_RESOLVE_STATUSES),
+        ),
+        help="Comma separated list of resolved statuses (closed, " "resolved)",
+    )
+    group.addoption(
+        "--jira-resolved-resolutions",
+        action="store",
+        dest="jira_resolved_resolutions",
+        default=_get_value(config, "DEFAULT", "resolved_resolutions"),
+        help="Comma separated list of resolved resolutions (done, " "fixed)",
+    )
+    group.addoption(
+        "--jira-do-not-run-test-case",
+        action="store_false",
+        dest="jira_run_test_case",
+        default=_get_bool(
+            config,
+            "DEFAULT",
+            "run_test_case",
+            DEFAULT_RUN_TEST_CASE,
+        ),
+        help="If set and test is marked by Jira plugin, such "
+        "test case is not executed.",
+    )
+    group.addoption(
+        CONNECTION_ERROR_FLAG_NAME,
+        action="store",
+        dest="jira_connection_error_strategy",
+        default=_get_value(config, "DEFAULT", "error_strategy", "strict"),
+        choices=[STRICT, SKIP, IGNORE],
+        help="""Action if there is a connection issue
                     strict - raise an exception
                     ignore - marker is ignored
                     skip - skip any test that has a marker
-                    """
-                    )
-    group.addoption('--jira-connection-retry-total',
-                    action='store',
-                    type=int,
-                    dest='jira_connection_retry_total',
-                    default=_get_value(
-                        config, 'DEFAULT', 'connection_retry_total', 5
-                    ),
-                    help='Number of connection retries'
-                    )
-    group.addoption('--jira-connection-retry-backoff-factor',
-                    action='store',
-                    type=float,
-                    dest='jira_connection_retry_backoff_factor',
-                    default=_get_value(
-                        config, 'DEFAULT',
-                        'connection_retry_backoff_factor', 0.2
-                    ),
-                    help='Number of connection retries'
-                    )
-    group.addoption('--jira-return-metadata',
-                    action='store_true',
-                    dest='return_jira_metadata',
-                    default=_get_value(
-                        config, 'DEFAULT', 'return_jira_metadata'
-                    ),
-                    help='If set, will return Jira issue with ticket metadata'
-                    )
+                    """,
+    )
+    group.addoption(
+        "--jira-connection-retry-total",
+        action="store",
+        type=int,
+        dest="jira_connection_retry_total",
+        default=_get_value(config, "DEFAULT", "connection_retry_total", 5),
+        help="Number of connection retries",
+    )
+    group.addoption(
+        "--jira-connection-retry-backoff-factor",
+        action="store",
+        type=float,
+        dest="jira_connection_retry_backoff_factor",
+        default=_get_value(
+            config, "DEFAULT", "connection_retry_backoff_factor", 0.2
+        ),
+        help="Number of connection retries",
+    )
+    group.addoption(
+        "--jira-return-metadata",
+        action="store_true",
+        dest="return_jira_metadata",
+        default=_get_value(config, "DEFAULT", "return_jira_metadata"),
+        help="If set, will return Jira issue with ticket metadata",
+    )
 
 
 def pytest_configure(config):
@@ -558,61 +584,61 @@ def pytest_configure(config):
         "issue(s) remains unresolved.  When 'run' is True, the test will be "
         "executed.  If a failure occurs, the test will xfail. "
         "When 'run' is False, the test will be skipped prior to execution. "
-        "See https://github.com/rhevm-qe-automation/pytest_jira"
+        "See https://github.com/rhevm-qe-automation/pytest_jira",
     )
-    components = config.getvalue('jira_components')
+    components = config.getvalue("jira_components")
     if isinstance(components, six.string_types):
-        components = [c for c in components.split(',') if c]
+        components = [c for c in components.split(",") if c]
 
-    resolved_statuses = config.getvalue('jira_resolved_statuses')
+    resolved_statuses = config.getvalue("jira_resolved_statuses")
     if isinstance(resolved_statuses, six.string_types):
         resolved_statuses = [
-            s.strip().lower() for s in resolved_statuses.split(',')
-            if s.strip()
+            s.strip().lower() for s in resolved_statuses.split(",") if s.strip()
         ]
     if not resolved_statuses:
         resolved_statuses = list(DEFAULT_RESOLVE_STATUSES)
 
-    resolved_resolutions = config.getvalue('jira_resolved_resolutions')
+    resolved_resolutions = config.getvalue("jira_resolved_resolutions")
     if isinstance(resolved_resolutions, six.string_types):
         resolved_resolutions = [
-            s.strip().lower() for s in resolved_resolutions.split(',')
+            s.strip().lower()
+            for s in resolved_resolutions.split(",")
             if s.strip()
         ]
     if not resolved_resolutions:
         resolved_resolutions = []
 
-    if config.getvalue('jira') and (
-        os.getenv(URL_ENV_VAR) or config.getvalue('jira_url')
+    if config.getvalue("jira") and (
+        os.getenv(URL_ENV_VAR) or config.getvalue("jira_url")
     ):
         jira_connection = JiraSiteConnection(
-            os.getenv(URL_ENV_VAR) or config.getvalue('jira_url'),
-            os.getenv(USERNAME_ENV_VAR) or config.getvalue('jira_username'),
-            os.getenv(PASSWORD_ENV_VAR) or config.getvalue('jira_password'),
-            config.getvalue('jira_verify'),
-            os.getenv(TOKEN_ENV_VAR) or config.getvalue('jira_token'),
+            os.getenv(URL_ENV_VAR) or config.getvalue("jira_url"),
+            os.getenv(USERNAME_ENV_VAR) or config.getvalue("jira_username"),
+            os.getenv(PASSWORD_ENV_VAR) or config.getvalue("jira_password"),
+            config.getvalue("jira_verify"),
+            os.getenv(TOKEN_ENV_VAR) or config.getvalue("jira_token"),
         )
         jira_connection.setup_retries(
-            config.getvalue('jira_connection_retry_total'),
-            config.getvalue('jira_connection_retry_backoff_factor')
+            config.getvalue("jira_connection_retry_total"),
+            config.getvalue("jira_connection_retry_backoff_factor"),
         )
         jira_marker = JiraMarkerReporter(
-            config.getvalue('jira_marker_strategy'),
-            config.getvalue('jira_docs'),
-            config.getvalue('jira_regex')
+            config.getvalue("jira_marker_strategy"),
+            config.getvalue("jira_docs"),
+            config.getvalue("jira_regex"),
         )
 
         jira_plugin = JiraHooks(
             jira_connection,
             jira_marker,
-            config.getvalue('jira_product_version'),
+            config.getvalue("jira_product_version"),
             components,
             resolved_statuses,
             resolved_resolutions,
-            config.getvalue('jira_run_test_case'),
+            config.getvalue("jira_run_test_case"),
             config.getini("xfail_strict"),
-            config.getvalue('jira_connection_error_strategy'),
-            config.getvalue('return_jira_metadata')
+            config.getvalue("jira_connection_error_strategy"),
+            config.getvalue("return_jira_metadata"),
         )
         ok = config.pluginmanager.register(jira_plugin, PLUGIN_NAME)
         assert ok

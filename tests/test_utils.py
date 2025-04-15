@@ -1,4 +1,5 @@
 import six
+
 from pytest_jira import _get_value
 
 
