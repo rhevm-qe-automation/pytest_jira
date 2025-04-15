@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, EXCLUDE
+from marshmallow import EXCLUDE, Schema, fields
 
 
 class Basic(Schema):
@@ -39,7 +39,8 @@ class User(Schema):
 
 class JiraIssueSchema(Schema):
     class Meta:
-        unknown = EXCLUDE # exclude unknown fields
+        unknown = EXCLUDE  # exclude unknown fields
+
     # Default set to None for fields that are not filled
     issuetype = fields.Nested(Type(), default=None)
     status = fields.Nested(Status(), default=None)
@@ -65,16 +66,16 @@ class JiraIssue:
         self.issue_id = issue_id
 
     def __repr__(self):
-        return 'JiraIssue {}'.format(self.issue_id)
+        return "JiraIssue {}".format(self.issue_id)
 
     @property
     def components_list(self):
-        return set(component['name'] for component in self.components)
+        return set(component["name"] for component in self.components)
 
     @property
     def fixed_versions(self):
-        return set(version['name'] for version in self.fix_versions)
+        return set(version["name"] for version in self.fix_versions)
 
     @property
     def versions_list(self):
-        return set(version['name'] for version in self.versions)
+        return set(version["name"] for version in self.versions)

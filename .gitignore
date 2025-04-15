@@ -4,6 +4,7 @@
 *.so
 
 # Packages
+.eggs
 *.egg
 *.egg-info
 dist
@@ -20,6 +21,7 @@ lib64
 __pycache__
 ChangeLog
 AUTHORS
+.cache
 
 # Installer logs
 pip-log.txt
@@ -40,3 +42,4 @@ nosetests.xml
 
 # PyTest results
 results
+coverage.xml

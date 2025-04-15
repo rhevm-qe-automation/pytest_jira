@@ -1,22 +1,65 @@
-name: Pytest Jira gatting
+name: CI
+
 on:
-   pull_request:
+  pull_request:
+  push:
+    branches: [main]
+
 jobs:
-  build:
-    name: Test
+  test:
+    name: Test with Python ${{ matrix.python }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python: ["3.8", "3.9", "3.10"]
+
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python }}
-    - name: Install dependencies
-      run: |
-        pip install tox
-    - name: Run linters
-      run: tox -e pep8
-    - name: Run unit tests
-      run: tox -e py
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Cache tox environments
+        uses: actions/cache@v3
+        with:
+          path: .tox
+          key: tox-${{ matrix.python }}-${{ hashFiles('tox.ini', 'pyproject.toml') }}
+
+      - name: Install tox
+        run: pip install tox
+
+      - name: Run tests
+        run: tox -e py
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}  # Not required for public repos
+          files: coverage.xml
+          flags: unittests
+          name: codecov-${{ matrix.python }}
+          fail_ci_if_error: true
+
+  lint:
+    name: Lint (pre-commit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install pre-commit
+        run: |
+          pip install pre-commit
+          pre-commit install
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files
