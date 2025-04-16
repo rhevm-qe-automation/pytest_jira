@@ -127,7 +127,11 @@ class JiraHooks(object):
 
             for issue_id, skipif in jira_ids:
                 try:
-                    if not self.is_issue_resolved(issue_id):
+                    issue = self.is_issue_resolved(issue_id)
+                    if config.option.return_jira_metadata:
+                        # Get the resolution resolution status
+                        issue = issue.resolution in self.resolved_resolutions
+                    if not issue:
                         if callable(skipif):
                             if not skipif(self.issue_cache[issue_id]):
                                 continue

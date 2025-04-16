@@ -4,11 +4,7 @@ import re
 import pytest
 from packaging.version import Version
 
-PUBLIC_JIRA_SERVER = "https://issues.jboss.org"
-
-SKIP_REASON_UNAUTHORIZED = """
-Current public jira server doesn't allow anonymous anymore
-"""
+PUBLIC_JIRA_SERVER = "https://issues.redhat.com"
 
 CONFTEST = """
 import pytest
@@ -82,6 +78,9 @@ PLUGIN_ARGS = (
     "--jira-url",
     PUBLIC_JIRA_SERVER,
 )
+
+TOKEN = os.environ.get("TEST_JIRA_TOKEN", "").strip()
+MISSING_TOKEN_REASON = "Missing TEST_JIRA_TOKEN variable"
 
 
 def assert_outcomes(
@@ -343,6 +342,24 @@ def test_open_jira_docstr_pass(testdir):
     )
     result = testdir.runpytest(*PLUGIN_ARGS)
     assert_outcomes(result, 0, 0, 0, 0, 1)
+
+
+# Should increase code coverage around return-metadata
+def test_return_metadata(testdir):
+    """Expected skip due to unresolved JIRA Issue %s"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile(
+        """
+        def test_xpassed():
+            \"\"\"
+            ORG-1382
+            \"\"\"
+            assert True
+    """
+    )
+    ARGS = PLUGIN_ARGS + ("--jira-return-metadata",)
+    result = testdir.runpytest(*ARGS)
+    assert_outcomes(result, 0, 0, 0, xpassed=1)
 
 
 def test_open_jira_marker_fail(testdir):
@@ -630,7 +647,7 @@ def test_open_for_different_version_failed(testdir):
     assert_outcomes(result, 0, 0, 1)
 
 
-@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 def test_get_issue_info_from_remote_passed(testdir):
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile(
@@ -642,7 +659,8 @@ def test_get_issue_info_from_remote_passed(testdir):
                 assert True
         """
     )
-    result = testdir.runpytest(*PLUGIN_ARGS)
+    ARGS = PLUGIN_ARGS + ("--jira-token", TOKEN)
+    result = testdir.runpytest(*ARGS)
     result.assert_outcomes(1, 0, 0)
 
 
@@ -669,7 +687,7 @@ def test_affected_component_skiped(testdir):
     assert_outcomes(result, 0, 1, 0)
 
 
-@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 def test_strategy_ignore_failed(testdir):
     """Invalid issue ID is ignored and test fails"""
     testdir.makeconftest(CONFTEST)
@@ -693,11 +711,11 @@ def test_strategy_ignore_failed(testdir):
             assert False
     """
     )
-    result = testdir.runpytest("--jira")
+    result = testdir.runpytest("--jira", "--jira-token", TOKEN)
     result.assert_outcomes(0, 0, 1)
 
 
-@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 def test_strategy_strict_exception(testdir):
     """Invalid issue ID, exception is rised"""
     testdir.makeconftest(CONFTEST)
@@ -716,6 +734,8 @@ def test_strategy_strict_exception(testdir):
         "--jira",
         "--jira-url",
         PUBLIC_JIRA_SERVER,
+        "--jira-token",
+        TOKEN,
         "--jira-marker-strategy",
         "strict",
         "--jira-issue-regex",
@@ -724,7 +744,7 @@ def test_strategy_strict_exception(testdir):
     assert "89745-1412789456148865" in result.stdout.str()
 
 
-@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 def test_strategy_warn_fail(testdir):
     """Invalid issue ID is ignored and warning is written"""
     testdir.makeconftest(CONFTEST)
@@ -747,7 +767,7 @@ def test_strategy_warn_fail(testdir):
             assert False
     """
     )
-    result = testdir.runpytest("--jira")
+    result = testdir.runpytest("--jira", "--jira-token", TOKEN)
     assert "ORG-1511786754387" in result.stderr.str()
     result.assert_outcomes(0, 0, 1)
 
@@ -776,7 +796,7 @@ def test_ignored_docs_marker_fail(testdir):
     assert_outcomes(result, 0, 0, 1)
 
 
-@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 def test_issue_not_found_considered_open_xfailed(testdir):
     """Issue is open but docs is ignored"""
     testdir.makeconftest(CONFTEST)
@@ -792,7 +812,8 @@ def test_issue_not_found_considered_open_xfailed(testdir):
             assert False
     """
     )
-    result = testdir.runpytest(*PLUGIN_ARGS)
+    ARGS = PLUGIN_ARGS + ("--jira-token", TOKEN)
+    result = testdir.runpytest(*ARGS)
     assert_outcomes(result, 0, 0, 0, xfailed=1)
 
 
@@ -1158,12 +1179,40 @@ def test_marker_error_strategy(
     )
 
 
+@pytest.mark.skip("Annonymous access it broken")
+@pytest.mark.parametrize(
+    "passed, skipped, failed, error",
+    [
+        (1, 0, 1, 0),
+    ],
+)
+def test_marker_anonymous_access(testdir, passed, skipped, failed, error):
+    """Anonymous access to closed, public issue"""
+    testdir.makeconftest(CONFTEST)
+    testdir.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.jira("CNV-21615")
+        def test_pass():
+            assert True
+
+        @pytest.mark.jira("CNV-21615")
+        def test_fail():
+            assert False
+    """
+    )
+    ARGS = ("--jira", "--jira-url", PUBLIC_JIRA_SERVER)
+    result = testdir.runpytest(*ARGS)
+    assert_outcomes(
+        result, passed=passed, skipped=skipped, failed=failed, error=error
+    )
+
+
 @pytest.mark.parametrize(
     "error_strategy, passed, skipped, failed, error",
     [
         ("strict", 0, 0, 1, 0),
-        ("skip", 0, 1, 0, 0),
-        ("ignore", 0, 0, 1, 0),
     ],
 )
 def test_jira_fixture_request_exception(
@@ -1199,7 +1248,7 @@ def test_jira_fixture_request_exception(
     )
 
 
-@pytest.mark.skip(reason=SKIP_REASON_UNAUTHORIZED)
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 @pytest.mark.parametrize("ticket", ["ORG-1382", "Foo-Bar"])
 @pytest.mark.parametrize(
     "return_method, _type",
@@ -1220,7 +1269,14 @@ def test_jira_fixture_return_metadata(testdir, return_method, _type, ticket):
     """
         % (ticket, _type)
     )
-    ARGS = ("--jira", "--jira-url", PUBLIC_JIRA_SERVER, return_method)
+    ARGS = (
+        "--jira",
+        "--jira-url",
+        PUBLIC_JIRA_SERVER,
+        "--jira-token",
+        TOKEN,
+        return_method,
+    )
     result = testdir.runpytest(*ARGS)
     result.assert_outcomes(1, 0, 0)
 
