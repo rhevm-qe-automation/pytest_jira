@@ -269,14 +269,29 @@ class JiraSiteConnection(object):
             )
 
         # If the user does not have sufficient permissions to browse issues
-        elif not r.json()["permissions"]["BROWSE_PROJECTS"]["havePermission"]:
-            raise Exception(
-                "Current user does not have sufficient permissions"
-                " to view issue"
-            )
         else:
-            self.is_connected = True
-            return True
+            try:
+                response = r.json()
+            except JSONDecodeError:
+                raise Exception(
+                    "Unable to determine permission for the user"
+                    ": {text}".format(text=r.text)
+                )
+            try:
+                if not response["permissions"]["BROWSE_PROJECTS"][
+                    "havePermission"
+                ]:
+                    raise Exception(
+                        "Current user does not have sufficient permissions"
+                        " to view issue"
+                    )
+            except KeyError:
+                raise Exception(
+                    "Unable to determine permission for the user"
+                    ": {response}".format(response=response)
+                )
+        self.is_connected = True
+        return True
 
     @retry(JSONDecodeError, tries=3, delay=2)
     def get_issue(self, issue_id, return_jira_metadata):
