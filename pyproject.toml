@@ -34,10 +34,6 @@ classifiers = [
     "Topic :: Utilities"
 ]
 
-[project.urls]
-Repository = "https://github.com/rhevm-qe-automation/pytest_jira"
-
-
 dependencies = [
     "pytest>=2.2.4",
     "six",
