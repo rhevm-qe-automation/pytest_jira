@@ -1,14 +1,17 @@
 [build-system]
-requires = ["setuptools>=61.0", "setuptools_scm[toml]>=7.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = [ "hatchling" ]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pytest_jira*", "issue_model*"]
 
 [project]
 name = "pytest-jira"
-dynamic = ["version"]
+version = "0.3.22"
 description = "py.test JIRA integration plugin, using markers"
 readme = "README.rst"
-requires-python = ">=3.8"
-license = { text = "GPL-2.0-only" }
+requires-python = ">=3.9"
+license = "GPL-2.0-only"
 authors = [
     { name = "James Laska", email = "james.laska@gmail.com" },
     { name = "Lukas Bednar", email = "lukyn17@gmail.com" }
@@ -49,19 +52,10 @@ test = [
   "pre-commit",
 ]
 
+
 [project.entry-points."pytest11"]
 pytest_jira = "pytest_jira"
 
-[tool.setuptools]
-license-files = ["LICENSE"]
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["pytest_jira*", "issue_model*"]
-
-[tool.setuptools_scm]
-version_scheme = "guess-next-dev"
-local_scheme = "no-local-version"
 
 [tool.black]
 line-length = 80
