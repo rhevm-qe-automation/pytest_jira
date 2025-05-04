@@ -34,10 +34,10 @@ dependencies = [
     "retry2>=0.9.5",
     "marshmallow==3.26.1",
     "packaging",
-    "coverage>=7.6.1",
 ]
-[project.optional-dependencies]
-test = [
+
+[dependency-groups]
+tests = [
   "pytest",
   "pytest-cov",
   "flake8",

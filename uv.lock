@@ -388,7 +388,6 @@ wheels = [
 name = "pytest-jira"
 source = { editable = "." }
 dependencies = [
-    { name = "coverage" },
     { name = "marshmallow" },
     { name = "packaging" },
     { name = "pytest" },
@@ -397,8 +396,8 @@ dependencies = [
     { name = "six" },
 ]
 
-[package.optional-dependencies]
-test = [
+[package.dev-dependencies]
+tests = [
     { name = "coverage" },
     { name = "flake8" },
     { name = "isort" },
@@ -409,21 +408,23 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "coverage", specifier = ">=7.6.1" },
-    { name = "coverage", marker = "extra == 'test'" },
-    { name = "flake8", marker = "extra == 'test'" },
-    { name = "isort", marker = "extra == 'test'" },
     { name = "marshmallow", specifier = "==3.26.1" },
     { name = "packaging" },
-    { name = "pre-commit", marker = "extra == 'test'" },
     { name = "pytest", specifier = ">=2.2.4" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-cov", marker = "extra == 'test'" },
     { name = "requests", specifier = ">=2.13.0" },
     { name = "retry2", specifier = ">=0.9.5" },
     { name = "six" },
 ]
-provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+tests = [
+    { name = "coverage" },
+    { name = "flake8" },
+    { name = "isort" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
 
 [[package]]
 name = "pyyaml"
