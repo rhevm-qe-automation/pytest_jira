@@ -1,24 +1,6 @@
-[build-system]
-requires = [ "hatchling" ]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["pytest_jira*", "issue_model*"]
-
-[tool.coverage.run]
-omit = ["tests/*"]
-
-[tool.coverage.report]
-fail_under = 20   # TODO: Need to be at least 60
-skip_empty = true
-
-[tool.coverage.html]
-directory = ".tests_coverage"
-
-
 [project]
 name = "pytest-jira"
-version = "0.3.22"
+dynamic = ["version"]
 description = "py.test JIRA integration plugin, using markers"
 readme = "README.rst"
 requires-python = ">=3.9"
@@ -52,6 +34,7 @@ dependencies = [
     "retry2>=0.9.5",
     "marshmallow==3.26.1",
     "packaging",
+    "coverage>=7.6.1",
 ]
 [project.optional-dependencies]
 test = [
@@ -76,3 +59,13 @@ line_length = 80
 known_first_party = ["pytest_jira"]
 include_trailing_comma = true
 use_parentheses = true
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pytest_jira*", "issue_model*"]
