@@ -6,33 +6,56 @@ on:
     branches: [main]
 
 jobs:
-  tox-checks:
+  test:
+    name: Test with Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+
+    env:
+      TEST_JIRA_TOKEN: ${{ secrets.TEST_JIRA_TOKEN }}
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install tox-uv
+        run: |
+          uv tool install tox --with tox-uv
+
+      - name: Run tests
+        run: tox -e ${{ matrix.python }}
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}  # Not required for public repos
+          files: coverage.xml
+          flags: unittests
+          name: codecov-${{ matrix.python }}
+          fail_ci_if_error: true
+
+  lint:
+    name: Lint (pre-commit)
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Check out code
+        uses: actions/checkout@v4
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
 
-    - name: Install tox-uv
-      run: |
-        uv tool install tox --with tox-uv
+      - name: Install tox-uv
+        run: |
+          uv tool install tox --with tox-uv
 
-    - name: Run lint
-      run: tox -e lint
+      - name: Run lint
+        run: tox -e lint
 
-    - name: Run pre-commit
-      run: tox -e pre-commit
-
-    - name: Run tests
-      run: tox -p -m tests
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}  # Not required for public repos
-        files: coverage.xml
-        flags: unittests
-        name: codecov-${{ matrix.python }}
-        fail_ci_if_error: true
+      - name: Run pre-commit
+        run: tox -e pre-commit

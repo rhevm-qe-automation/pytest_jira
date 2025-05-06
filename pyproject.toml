@@ -1,10 +1,14 @@
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
 [project]
 name = "pytest-jira"
 dynamic = ["version"]
 description = "py.test JIRA integration plugin, using markers"
 readme = "README.rst"
 requires-python = ">=3.9"
-license = "GPL-2.0-only"
+license = { text = "GPL-2.0-only" }
 authors = [
     { name = "James Laska", email = "james.laska@gmail.com" },
     { name = "Lukas Bednar", email = "lukyn17@gmail.com" }
@@ -36,6 +40,9 @@ dependencies = [
     "packaging",
 ]
 
+[project.urls]
+Homepage = "https://github.com/rhevm-qe-automation/pytest_jira"
+
 [dependency-groups]
 tests = [
   "pytest",
@@ -59,10 +66,6 @@ line_length = 80
 known_first_party = ["pytest_jira"]
 include_trailing_comma = true
 use_parentheses = true
-
-[build-system]
-requires = ["hatchling", "uv-dynamic-versioning"]
-build-backend = "hatchling.build"
 
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
