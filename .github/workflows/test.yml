@@ -31,7 +31,7 @@ jobs:
         run: tox -e ${{ matrix.python }}
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}  # Not required for public repos
           files: coverage.xml
