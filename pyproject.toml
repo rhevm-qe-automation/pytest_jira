@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0", "setuptools_scm[toml]>=7.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pytest-jira"
 dynamic = ["version"]
 description = "py.test JIRA integration plugin, using markers"
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "GPL-2.0-only" }
 authors = [
     { name = "James Laska", email = "james.laska@gmail.com" },
@@ -36,11 +36,15 @@ dependencies = [
     "six",
     "requests>=2.13.0",
     "retry2>=0.9.5",
-    "marshmallow>=3.2.0",
-    "packaging"
+    "marshmallow==3.26.1",
+    "packaging",
 ]
-[project.optional-dependencies]
-test = [
+
+[project.urls]
+Homepage = "https://github.com/rhevm-qe-automation/pytest_jira"
+
+[dependency-groups]
+tests = [
   "pytest",
   "pytest-cov",
   "flake8",
@@ -49,19 +53,10 @@ test = [
   "pre-commit",
 ]
 
+
 [project.entry-points."pytest11"]
 pytest_jira = "pytest_jira"
 
-[tool.setuptools]
-license-files = ["LICENSE"]
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["pytest_jira*", "issue_model*"]
-
-[tool.setuptools_scm]
-version_scheme = "guess-next-dev"
-local_scheme = "no-local-version"
 
 [tool.black]
 line-length = 80
@@ -71,3 +66,9 @@ line_length = 80
 known_first_party = ["pytest_jira"]
 include_trailing_comma = true
 use_parentheses = true
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pytest_jira*", "issue_model*"]
