@@ -93,6 +93,61 @@ def clean_jira_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
+class TestJiraSiteConnectionAuth:
+    """Unit tests for JiraSiteConnection auth modes."""
+
+    def test_username_and_token_uses_basic_auth(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            username="user@example.com",
+            token="api-token",
+        )
+        assert conn.basic_auth == ("user@example.com", "api-token")
+        assert conn.headers is None
+
+    def test_token_only_uses_bearer(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            token="my-token",
+        )
+        assert conn.basic_auth is None
+        assert conn.headers == {"Authorization": "Bearer my-token"}
+
+    def test_username_and_password_uses_basic_auth(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            username="user",
+            password="pass",
+        )
+        assert conn.basic_auth == ("user", "pass")
+        assert conn.headers is None
+
+    def test_no_credentials(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+        )
+        assert conn.basic_auth is None
+        assert conn.headers is None
+
+    def test_username_without_credentials(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            username="user",
+        )
+        assert conn.basic_auth is None
+        assert conn.headers is None
+
+
 def assert_outcomes(
     result, passed, skipped, failed, error=0, xpassed=0, xfailed=0
 ):
@@ -1196,8 +1251,8 @@ def test_marker_error_strategy(
         (1, 0, 1, 0),
     ],
 )
-def test_marker_anonymous_access(testdir, passed, skipped, failed, error):
-    """Access to closed, public issue"""
+def test_marker_authenticated_access(testdir, passed, skipped, failed, error):
+    """Authenticated access to closed issue"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile(
         """
