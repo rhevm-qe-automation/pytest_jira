@@ -210,16 +210,18 @@ class JiraSiteConnection(object):
 
         self.is_connected = False
 
-        if self.token:
+        if self.username and (self.token or self.password):
+            self.basic_auth = (self.username, self.token or self.password)
+            self.headers = None
+
+        elif self.token:
             token_bearer = f"Bearer {self.token}"
             self.headers = {"Authorization": token_bearer}
-
-        # Setup basic_auth
-        elif self.username and self.password:
-            self.basic_auth = (self.username, self.password)
+            self.basic_auth = None
 
         else:
             self.basic_auth = None
+            self.headers = None
 
         self.session = requests.Session()
 
@@ -241,14 +243,14 @@ class JiraSiteConnection(object):
         if "verify" not in kwargs:
             kwargs["verify"] = self.verify
 
-        if self.token:
-            rsp = self.session.request(
-                method, url, headers=self.headers, **kwargs
-            )
-
-        elif self.basic_auth:
+        if self.basic_auth:
             rsp = self.session.request(
                 method, url, auth=self.basic_auth, **kwargs
+            )
+
+        elif self.headers:
+            rsp = self.session.request(
+                method, url, headers=self.headers, **kwargs
             )
 
         else:
