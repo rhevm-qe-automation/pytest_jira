@@ -259,43 +259,8 @@ class JiraSiteConnection(object):
         return rsp
 
     def check_connection(self):
-        # This URL work for both anonymous and logged in users
-        auth_url = "{url}/rest/api/2/mypermissions".format(url=self.url)
-        r = self._jira_request(
-            auth_url, params={"permissions": "BROWSE_PROJECTS"}
-        )
-
-        # For some reason in case on invalid credentials the status is still
-        # 200 but the body is empty
-        if not r.text:
-            raise Exception(
-                "Could not connect to {url}. Invalid credentials".format(
-                    url=self.url
-                )
-            )
-
-        # If the user does not have sufficient permissions to browse issues
-        else:
-            try:
-                response = r.json()
-            except JSONDecodeError:
-                raise Exception(
-                    "Unable to determine permission for the user"
-                    ": {text}".format(text=r.text)
-                )
-            try:
-                if not response["permissions"]["BROWSE_PROJECTS"][
-                    "havePermission"
-                ]:
-                    raise Exception(
-                        "Current user does not have sufficient permissions"
-                        " to view issue"
-                    )
-            except KeyError:
-                raise Exception(
-                    "Unable to determine permission for the user"
-                    ": {response}".format(response=response)
-                )
+        auth_url = "{url}/rest/api/2/myself".format(url=self.url)
+        self._jira_request(auth_url)
         self.is_connected = True
         return True
 

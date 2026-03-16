@@ -1,10 +1,9 @@
 import os
-import re
 
 import pytest
 from packaging.version import Version
 
-PUBLIC_JIRA_SERVER = "https://issues.redhat.com"
+PUBLIC_JIRA_SERVER = "https://redhat.atlassian.net"
 
 CONFTEST = """
 import pytest
@@ -534,7 +533,6 @@ def test_invalid_configuration_exception(testdir):
     assert "ValueError: Not a boolean: something" in result.stderr.str()
 
 
-@pytest.mark.skip("Jira Cloud returns 200 for invalid credentials")
 def test_invalid_authentication_exception(testdir):
     """Failed authentication, exception should be raised"""
     testdir.makepyfile(
@@ -549,16 +547,14 @@ def test_invalid_authentication_exception(testdir):
     ARGS = (
         "--jira",
         "--jira-url",
-        "https://redhat.atlassian.net",
+        PUBLIC_JIRA_SERVER,
         "--jira-user",
         "user123",
         "--jira-password",
         "passwd123",
     )
     result = testdir.runpytest(*ARGS)
-    assert re.search(
-        "4(01|03|29) Client Error", result.stdout.str(), re.MULTILINE
-    )
+    assert "401 Client Error" in result.stdout.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
@@ -1175,7 +1171,7 @@ def test_marker_error_strategy(
     ARGS = (
         "--jira",
         "--jira-url",
-        "http://jira.invalid",
+        "http://foo.bar.com",
         "--jira-user",
         "user123",
         "--jira-password",
@@ -1193,7 +1189,7 @@ def test_marker_error_strategy(
     )
 
 
-@pytest.mark.skip("Annonymous access it broken")
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 @pytest.mark.parametrize(
     "passed, skipped, failed, error",
     [
@@ -1201,7 +1197,7 @@ def test_marker_error_strategy(
     ],
 )
 def test_marker_anonymous_access(testdir, passed, skipped, failed, error):
-    """Anonymous access to closed, public issue"""
+    """Access to closed, public issue"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile(
         """
@@ -1216,10 +1212,20 @@ def test_marker_anonymous_access(testdir, passed, skipped, failed, error):
             assert False
     """
     )
-    ARGS = ("--jira", "--jira-url", PUBLIC_JIRA_SERVER)
+    ARGS = (
+        "--jira",
+        "--jira-url",
+        PUBLIC_JIRA_SERVER,
+        "--jira-token",
+        TOKEN,
+    )
     result = testdir.runpytest(*ARGS)
     assert_outcomes(
-        result, passed=passed, skipped=skipped, failed=failed, error=error
+        result,
+        passed=passed,
+        skipped=skipped,
+        failed=failed,
+        error=error,
     )
 
 
@@ -1244,7 +1250,7 @@ def test_jira_fixture_request_exception(
     ARGS = (
         "--jira",
         "--jira-url",
-        "http://jira.invalid",
+        "http://foo.bar.com",
         "--jira-user",
         "user123",
         "--jira-password",
