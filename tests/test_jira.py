@@ -83,6 +83,17 @@ TOKEN = os.environ.get("TEST_JIRA_TOKEN", "").strip()
 MISSING_TOKEN_REASON = "Missing TEST_JIRA_TOKEN variable"
 
 
+@pytest.fixture(autouse=True)
+def clean_jira_env(monkeypatch):
+    for var in (
+        "PYTEST_JIRA_URL",
+        "PYTEST_JIRA_USERNAME",
+        "PYTEST_JIRA_PASSWORD",
+        "PYTEST_JIRA_TOKEN",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
 def assert_outcomes(
     result, passed, skipped, failed, error=0, xpassed=0, xfailed=0
 ):
@@ -523,6 +534,7 @@ def test_invalid_configuration_exception(testdir):
     assert "ValueError: Not a boolean: something" in result.stderr.str()
 
 
+@pytest.mark.skip("Jira Cloud returns 200 for invalid credentials")
 def test_invalid_authentication_exception(testdir):
     """Failed authentication, exception should be raised"""
     testdir.makepyfile(
@@ -537,14 +549,16 @@ def test_invalid_authentication_exception(testdir):
     ARGS = (
         "--jira",
         "--jira-url",
-        PUBLIC_JIRA_SERVER,
+        "https://redhat.atlassian.net",
         "--jira-user",
         "user123",
         "--jira-password",
         "passwd123",
     )
     result = testdir.runpytest(*ARGS)
-    assert re.search("4(01|29) Client Error", result.stdout.str(), re.MULTILINE)
+    assert re.search(
+        "4(01|03|29) Client Error", result.stdout.str(), re.MULTILINE
+    )
 
 
 def test_disabled_ssl_verification_pass(testdir):
@@ -1161,7 +1175,7 @@ def test_marker_error_strategy(
     ARGS = (
         "--jira",
         "--jira-url",
-        "http://foo.bar.com",
+        "http://jira.invalid",
         "--jira-user",
         "user123",
         "--jira-password",
@@ -1230,7 +1244,7 @@ def test_jira_fixture_request_exception(
     ARGS = (
         "--jira",
         "--jira-url",
-        "http://foo.bar.com",
+        "http://jira.invalid",
         "--jira-user",
         "user123",
         "--jira-password",
