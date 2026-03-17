@@ -223,6 +223,11 @@ class JiraSiteConnection(object):
             self.basic_auth = None
             self.headers = None
 
+        if self.basic_auth and self.headers:
+            raise ValueError(
+                "Configuration error: basic_auth and headers must be mutually "
+                "exclusive."
+            )
         self.session = requests.Session()
 
     def setup_retries(self, total, backoff_factor):
@@ -259,6 +264,8 @@ class JiraSiteConnection(object):
         return rsp
 
     def check_connection(self):
+        """Validate authentication and reachability. Does not verify browse
+        permissions."""
         auth_url = "{url}/rest/api/2/myself".format(url=self.url)
         self._jira_request(auth_url)
         self.is_connected = True
