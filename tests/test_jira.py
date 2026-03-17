@@ -80,7 +80,56 @@ PLUGIN_ARGS = (
 )
 
 TOKEN = os.environ.get("TEST_JIRA_TOKEN", "").strip()
+JIRA_USER = os.environ.get("TEST_JIRA_USER", "").strip()
 MISSING_TOKEN_REASON = "Missing TEST_JIRA_TOKEN variable"
+MISSING_USER_REASON = (
+    "Missing TEST_JIRA_USER variable (required for basic auth)"
+)
+JIRA_403_REASON = (
+    "Jira API returned 403 Forbidden (token may lack permissions)"
+)
+TOKEN_SKIP_REASON = (
+    "TEST_JIRA_TOKEN or TEST_JIRA_USER not set, or Jira API returned 403"
+)
+
+_JIRA_ACCESSIBLE = None
+
+
+def _jira_token_accessible():
+    """Return True if we can connect to Jira with the current token."""
+    global _JIRA_ACCESSIBLE
+    if _JIRA_ACCESSIBLE is not None:
+        return _JIRA_ACCESSIBLE
+    if not TOKEN or not JIRA_USER:
+        _JIRA_ACCESSIBLE = False
+        return False
+    try:
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url=PUBLIC_JIRA_SERVER, username=JIRA_USER, token=TOKEN
+        )
+        conn.check_connection()
+        _JIRA_ACCESSIBLE = True
+        return True
+    except Exception as e:
+        err_str = str(e)
+        if "403" in err_str or "Forbidden" in err_str:
+            _JIRA_ACCESSIBLE = False
+            return False
+        raise
+
+
+def _token_skip_reason():
+    if not TOKEN or not JIRA_USER:
+        return MISSING_TOKEN_REASON if not TOKEN else MISSING_USER_REASON
+    if not _jira_token_accessible():
+        return JIRA_403_REASON
+    return None
+
+
+def _basic_auth_args():
+    return ("--jira-user", JIRA_USER, "--jira-token", TOKEN)
 
 
 @pytest.fixture(autouse=True)
@@ -716,7 +765,10 @@ def test_open_for_different_version_failed(testdir):
     assert_outcomes(result, 0, 0, 1)
 
 
-@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
+@pytest.mark.skipif(
+    not TOKEN or not JIRA_USER or not _jira_token_accessible(),
+    reason=TOKEN_SKIP_REASON,
+)
 def test_get_issue_info_from_remote_passed(testdir):
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile(
@@ -728,7 +780,7 @@ def test_get_issue_info_from_remote_passed(testdir):
                 assert True
         """
     )
-    ARGS = PLUGIN_ARGS + ("--jira-token", TOKEN)
+    ARGS = PLUGIN_ARGS + _basic_auth_args()
     result = testdir.runpytest(*ARGS)
     result.assert_outcomes(1, 0, 0)
 
@@ -756,7 +808,10 @@ def test_affected_component_skiped(testdir):
     assert_outcomes(result, 0, 1, 0)
 
 
-@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
+@pytest.mark.skipif(
+    not TOKEN or not JIRA_USER or not _jira_token_accessible(),
+    reason=TOKEN_SKIP_REASON,
+)
 def test_strategy_ignore_failed(testdir):
     """Invalid issue ID is ignored and test fails"""
     testdir.makeconftest(CONFTEST)
@@ -780,11 +835,14 @@ def test_strategy_ignore_failed(testdir):
             assert False
     """
     )
-    result = testdir.runpytest("--jira", "--jira-token", TOKEN)
+    result = testdir.runpytest("--jira", *_basic_auth_args())
     result.assert_outcomes(0, 0, 1)
 
 
-@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
+@pytest.mark.skipif(
+    not TOKEN or not JIRA_USER or not _jira_token_accessible(),
+    reason=TOKEN_SKIP_REASON,
+)
 def test_strategy_strict_exception(testdir):
     """Invalid issue ID, exception is rised"""
     testdir.makeconftest(CONFTEST)
@@ -803,8 +861,7 @@ def test_strategy_strict_exception(testdir):
         "--jira",
         "--jira-url",
         PUBLIC_JIRA_SERVER,
-        "--jira-token",
-        TOKEN,
+        *_basic_auth_args(),
         "--jira-marker-strategy",
         "strict",
         "--jira-issue-regex",
@@ -813,7 +870,10 @@ def test_strategy_strict_exception(testdir):
     assert "89745-1412789456148865" in result.stdout.str()
 
 
-@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
+@pytest.mark.skipif(
+    not TOKEN or not JIRA_USER or not _jira_token_accessible(),
+    reason=TOKEN_SKIP_REASON,
+)
 def test_strategy_warn_fail(testdir):
     """Invalid issue ID is ignored and warning is written"""
     testdir.makeconftest(CONFTEST)
@@ -836,7 +896,7 @@ def test_strategy_warn_fail(testdir):
             assert False
     """
     )
-    result = testdir.runpytest("--jira", "--jira-token", TOKEN)
+    result = testdir.runpytest("--jira", *_basic_auth_args())
     assert "ORG-1511786754387" in result.stderr.str()
     result.assert_outcomes(0, 0, 1)
 
@@ -865,7 +925,10 @@ def test_ignored_docs_marker_fail(testdir):
     assert_outcomes(result, 0, 0, 1)
 
 
-@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
+@pytest.mark.skipif(
+    not TOKEN or not JIRA_USER or not _jira_token_accessible(),
+    reason=TOKEN_SKIP_REASON,
+)
 def test_issue_not_found_considered_open_xfailed(testdir):
     """Issue is open but docs is ignored"""
     testdir.makeconftest(CONFTEST)
@@ -881,7 +944,7 @@ def test_issue_not_found_considered_open_xfailed(testdir):
             assert False
     """
     )
-    ARGS = PLUGIN_ARGS + ("--jira-token", TOKEN)
+    ARGS = PLUGIN_ARGS + _basic_auth_args()
     result = testdir.runpytest(*ARGS)
     assert_outcomes(result, 0, 0, 0, xfailed=1)
 
@@ -1248,7 +1311,10 @@ def test_marker_error_strategy(
     )
 
 
-@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
+@pytest.mark.skipif(
+    not TOKEN or not JIRA_USER or not _jira_token_accessible(),
+    reason=TOKEN_SKIP_REASON,
+)
 @pytest.mark.parametrize(
     "passed, skipped, failed, error",
     [
@@ -1275,8 +1341,7 @@ def test_marker_authenticated_access(testdir, passed, skipped, failed, error):
         "--jira",
         "--jira-url",
         PUBLIC_JIRA_SERVER,
-        "--jira-token",
-        TOKEN,
+        *_basic_auth_args(),
     )
     result = testdir.runpytest(*ARGS)
     assert_outcomes(
@@ -1327,7 +1392,10 @@ def test_jira_fixture_request_exception(
     )
 
 
-@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
+@pytest.mark.skipif(
+    not TOKEN or not JIRA_USER or not _jira_token_accessible(),
+    reason=TOKEN_SKIP_REASON,
+)
 @pytest.mark.parametrize("ticket", ["ORG-1382", "Foo-Bar"])
 @pytest.mark.parametrize(
     "return_method, _type",
@@ -1352,8 +1420,7 @@ def test_jira_fixture_return_metadata(testdir, return_method, _type, ticket):
         "--jira",
         "--jira-url",
         PUBLIC_JIRA_SERVER,
-        "--jira-token",
-        TOKEN,
+        *_basic_auth_args(),
         return_method,
     )
     result = testdir.runpytest(*ARGS)

@@ -15,6 +15,7 @@ jobs:
 
     env:
       TEST_JIRA_TOKEN: ${{ secrets.TEST_JIRA_TOKEN }}
+      TEST_JIRA_USER: ${{ secrets.TEST_JIRA_USER }}
 
     steps:
       - name: Check out code
