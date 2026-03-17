@@ -210,16 +210,18 @@ class JiraSiteConnection(object):
 
         self.is_connected = False
 
-        if self.token:
+        if self.username and (self.token or self.password):
+            self.basic_auth = (self.username, self.token or self.password)
+            self.headers = None
+
+        elif self.token:
             token_bearer = f"Bearer {self.token}"
             self.headers = {"Authorization": token_bearer}
-
-        # Setup basic_auth
-        elif self.username and self.password:
-            self.basic_auth = (self.username, self.password)
+            self.basic_auth = None
 
         else:
             self.basic_auth = None
+            self.headers = None
 
         self.session = requests.Session()
 
@@ -241,14 +243,14 @@ class JiraSiteConnection(object):
         if "verify" not in kwargs:
             kwargs["verify"] = self.verify
 
-        if self.token:
-            rsp = self.session.request(
-                method, url, headers=self.headers, **kwargs
-            )
-
-        elif self.basic_auth:
+        if self.basic_auth:
             rsp = self.session.request(
                 method, url, auth=self.basic_auth, **kwargs
+            )
+
+        elif self.headers:
+            rsp = self.session.request(
+                method, url, headers=self.headers, **kwargs
             )
 
         else:
@@ -257,43 +259,8 @@ class JiraSiteConnection(object):
         return rsp
 
     def check_connection(self):
-        # This URL work for both anonymous and logged in users
-        auth_url = "{url}/rest/api/2/mypermissions".format(url=self.url)
-        r = self._jira_request(
-            auth_url, params={"permissions": "BROWSE_PROJECTS"}
-        )
-
-        # For some reason in case on invalid credentials the status is still
-        # 200 but the body is empty
-        if not r.text:
-            raise Exception(
-                "Could not connect to {url}. Invalid credentials".format(
-                    url=self.url
-                )
-            )
-
-        # If the user does not have sufficient permissions to browse issues
-        else:
-            try:
-                response = r.json()
-            except JSONDecodeError:
-                raise Exception(
-                    "Unable to determine permission for the user"
-                    ": {text}".format(text=r.text)
-                )
-            try:
-                if not response["permissions"]["BROWSE_PROJECTS"][
-                    "havePermission"
-                ]:
-                    raise Exception(
-                        "Current user does not have sufficient permissions"
-                        " to view issue"
-                    )
-            except KeyError:
-                raise Exception(
-                    "Unable to determine permission for the user"
-                    ": {response}".format(response=response)
-                )
+        auth_url = "{url}/rest/api/2/myself".format(url=self.url)
+        self._jira_request(auth_url)
         self.is_connected = True
         return True
 

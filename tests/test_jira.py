@@ -1,10 +1,9 @@
 import os
-import re
 
 import pytest
 from packaging.version import Version
 
-PUBLIC_JIRA_SERVER = "https://issues.redhat.com"
+PUBLIC_JIRA_SERVER = "https://redhat.atlassian.net"
 
 CONFTEST = """
 import pytest
@@ -81,6 +80,72 @@ PLUGIN_ARGS = (
 
 TOKEN = os.environ.get("TEST_JIRA_TOKEN", "").strip()
 MISSING_TOKEN_REASON = "Missing TEST_JIRA_TOKEN variable"
+
+
+@pytest.fixture(autouse=True)
+def clean_jira_env(monkeypatch):
+    for var in (
+        "PYTEST_JIRA_URL",
+        "PYTEST_JIRA_USERNAME",
+        "PYTEST_JIRA_PASSWORD",
+        "PYTEST_JIRA_TOKEN",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
+class TestJiraSiteConnectionAuth:
+    """Unit tests for JiraSiteConnection auth modes."""
+
+    def test_username_and_token_uses_basic_auth(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            username="user@example.com",
+            token="api-token",
+        )
+        assert conn.basic_auth == ("user@example.com", "api-token")
+        assert conn.headers is None
+
+    def test_token_only_uses_bearer(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            token="my-token",
+        )
+        assert conn.basic_auth is None
+        assert conn.headers == {"Authorization": "Bearer my-token"}
+
+    def test_username_and_password_uses_basic_auth(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            username="user",
+            password="pass",
+        )
+        assert conn.basic_auth == ("user", "pass")
+        assert conn.headers is None
+
+    def test_no_credentials(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+        )
+        assert conn.basic_auth is None
+        assert conn.headers is None
+
+    def test_username_without_credentials(self):
+        from pytest_jira import JiraSiteConnection
+
+        conn = JiraSiteConnection(
+            url="http://jira.example.com",
+            username="user",
+        )
+        assert conn.basic_auth is None
+        assert conn.headers is None
 
 
 def assert_outcomes(
@@ -544,7 +609,7 @@ def test_invalid_authentication_exception(testdir):
         "passwd123",
     )
     result = testdir.runpytest(*ARGS)
-    assert re.search("4(01|29) Client Error", result.stdout.str(), re.MULTILINE)
+    assert "401 Client Error" in result.stdout.str()
 
 
 def test_disabled_ssl_verification_pass(testdir):
@@ -1179,15 +1244,15 @@ def test_marker_error_strategy(
     )
 
 
-@pytest.mark.skip("Annonymous access it broken")
+@pytest.mark.skipif(not TOKEN, reason=MISSING_TOKEN_REASON)
 @pytest.mark.parametrize(
     "passed, skipped, failed, error",
     [
         (1, 0, 1, 0),
     ],
 )
-def test_marker_anonymous_access(testdir, passed, skipped, failed, error):
-    """Anonymous access to closed, public issue"""
+def test_marker_authenticated_access(testdir, passed, skipped, failed, error):
+    """Authenticated access to closed issue"""
     testdir.makeconftest(CONFTEST)
     testdir.makepyfile(
         """
@@ -1202,10 +1267,20 @@ def test_marker_anonymous_access(testdir, passed, skipped, failed, error):
             assert False
     """
     )
-    ARGS = ("--jira", "--jira-url", PUBLIC_JIRA_SERVER)
+    ARGS = (
+        "--jira",
+        "--jira-url",
+        PUBLIC_JIRA_SERVER,
+        "--jira-token",
+        TOKEN,
+    )
     result = testdir.runpytest(*ARGS)
     assert_outcomes(
-        result, passed=passed, skipped=skipped, failed=failed, error=error
+        result,
+        passed=passed,
+        skipped=skipped,
+        failed=failed,
+        error=error,
     )
 
 
