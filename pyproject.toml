@@ -70,5 +70,8 @@ use_parentheses = true
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
+[tool.uv-dynamic-versioning]
+pattern = "(?P<base>\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?)"
+
 [tool.hatch.build.targets.wheel]
 packages = ["pytest_jira*", "issue_model*"]
