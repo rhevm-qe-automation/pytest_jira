@@ -1,4 +1,5 @@
 import os
+import re
 
 import pytest
 from packaging.version import Version
@@ -609,7 +610,10 @@ def test_invalid_authentication_exception(testdir):
         "passwd123",
     )
     result = testdir.runpytest(*ARGS)
-    assert "401 Client Error" in result.stdout.str()
+    assert result.ret != 0, "Invalid auth should cause pytest to fail"
+    assert re.search(
+        r"4(01|29)\s+Client Error", result.stdout.str(), re.MULTILINE
+    ), f"Expected 401/429 Client Error in output: {result.stdout.str()}"
 
 
 def test_disabled_ssl_verification_pass(testdir):
