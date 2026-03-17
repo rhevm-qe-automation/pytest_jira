@@ -85,9 +85,7 @@ MISSING_TOKEN_REASON = "Missing TEST_JIRA_TOKEN variable"
 MISSING_USER_REASON = (
     "Missing TEST_JIRA_USER variable (required for basic auth)"
 )
-JIRA_403_REASON = (
-    "Jira API returned 403 Forbidden (token may lack permissions)"
-)
+JIRA_403_REASON = "Jira API returned 403 Forbidden (token may lack permissions)"
 TOKEN_SKIP_REASON = (
     "TEST_JIRA_TOKEN or TEST_JIRA_USER not set, or Jira API returned 403"
 )
