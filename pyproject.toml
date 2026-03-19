@@ -74,4 +74,4 @@ source = "uv-dynamic-versioning"
 pattern = "(?P<base>\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?)"
 
 [tool.hatch.build.targets.wheel]
-packages = ["pytest_jira*", "issue_model*"]
+only-include = ["pytest_jira.py", "issue_model.py"]
