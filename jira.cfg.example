@@ -1,0 +1,59 @@
+# Example configuration for pytest-jira.
+#
+# Copy this file to `jira.cfg` and edit it. `jira.cfg` is git ignored, so your
+# credentials never end up in the repository. The plugin reads every one of
+# these files, later ones overriding earlier ones:
+#
+#   /etc/jira.cfg
+#   <tests root dir>/jira.cfg
+#   ~/jira.cfg
+#   ./jira.cfg (current working directory)
+#
+# Every option below can also be given on the command line (`pytest --help`)
+# or, for the connection settings, through the PYTEST_JIRA_* environment
+# variables (PYTEST_JIRA_URL, PYTEST_JIRA_USERNAME, PYTEST_JIRA_PASSWORD,
+# PYTEST_JIRA_TOKEN, PYTEST_JIRA_CLOUD_ID, PYTEST_JIRA_OAUTH_CLIENT_ID,
+# PYTEST_JIRA_OAUTH_CLIENT_SECRET; see README). The environment wins over
+# this file and over the command line options.
+#
+# Two ways to authenticate against Jira Cloud:
+#   * a user: `url` + `username` (your email) + `token` (an API token)
+#   * a service account: `url` + `cloud_id` + `oauth_client_id` +
+#     `oauth_client_secret` (the plugin mints a short-lived access token
+#     and sends it to the API gateway)
+# A bare token is not enough on Jira Cloud: it means nothing without either
+# a username (user) or the OAuth 2.0 credential (service account), and the
+# plugin stops with an explanation instead of sending it. On Jira
+# Server/Data Center a token alone is a personal access token and stays
+# valid. Service accounts also need product access to Jira and "Browse
+# projects", or Jira answers 404 and issues look missing.
+
+[DEFAULT]
+url = https://jira.atlassian.com
+# Leave the credential fields empty for anonymous access.
+username =
+password =
+token =
+# cloud_id marks the url as Jira Cloud, where a bare token is not a valid
+# credential (exit 4). A Server/Data Center setup with a personal access
+# token must leave it empty; it is required for the OAuth service account.
+cloud_id =
+oauth_client_id =
+oauth_client_secret =
+# oauth_client_secret is a long-lived credential: keep this file readable by
+# you only (`chmod 600 jira.cfg`) and prefer PYTEST_JIRA_OAUTH_CLIENT_SECRET,
+# which leaves nothing on disk.
+# ssl_verification = True/False  (False also allows a plain http url;
+#                                ignored for an OAuth service account)
+# version = foo-1.0
+# components = com1,second component,com3
+# marker_strategy = [open|strict|warn|ignore] (not found issues)
+# docs_search = False (disable searching for issue id in docs)
+# issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
+# resolved_statuses = comma separated list of statuses (closed, resolved)
+# resolved_resolutions = comma separated list of resolutions (done, fixed)
+# run_test_case = True (default value for 'run' parameter)
+# error_strategy = [strict|skip|ignore] (how to handle connection errors)
+# return_jira_metadata = False (return Jira issue with metadata instead of boolean result)
+# connection_retry_total = 5 (number of retries)
+# connection_retry_backoff_factor = 0.2 (connection retry backoff factor)
