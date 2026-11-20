@@ -45,8 +45,13 @@ Marking tests
 You can specify jira issue ID in docstring or in pytest.mark.jira decorator.
 
 By default the regular expression pattern for matching jira issue ID is ``[A-Z]+-[0-9]+``,
-it can be changed by ``--jira-issue-regex=REGEX`` or in a config file by
-``jira_regex=REGEX``.
+it can be changed by ``--jira-issue-regex=REGEX`` or in the ``jira.cfg``
+config file by ``issue_regex=REGEX`` (the ini key drops the ``--jira-``
+prefix and turns hyphens into underscores, but it is not derived mechanically
+from the option name: ``--jira-marker-strategy`` is ``marker_strategy`` while
+``--jira-product-version`` is ``version``, ``--jira-connection-error-strategy``
+is ``error_strategy`` and ``--jira-do-not-run-test-case`` is
+``run_test_case``; ``jira.cfg.example`` lists them all).
 
 It's also possible to change behavior if issue ID was not found
 by setting ``--jira-marker-strategy=STRATEGY`` or in config file
@@ -132,7 +137,10 @@ Fixture usage
 
 Besides a test marker, you can also use the added ``jira_issue`` fixture. This enables examining issue status mid test
 and not just at the beginning of a test. The fixture returns a boolean representing the state of the issue.
-If the issue isn't found, or the jira plugin isn't loaded, it returns ``None``.
+An issue that is not found is answered by ``--jira-marker-strategy`` (``open`` by
+default), exactly as a marked issue is. ``None`` is returned only when the jira
+plugin isn't loaded, or when a connection error is ignored under
+``--jira-connection-error-strategy=ignore``.
 
 The same API is available at other pytest scopes via ``jira_issue_scope_class``,
 ``jira_issue_scope_module``, ``jira_issue_scope_package``, and ``jira_issue_scope_session``.
@@ -152,11 +160,12 @@ The same API is available at other pytest scopes via ``jira_issue_scope_class``,
 Requires
 ========
 
--  pytest >= 2.2.3
--  requests >= 2.13.0
+-  pytest >= 2.2.4
 -  six
+-  requests >= 2.13.0
 -  retry2>=0.9.5
--  marshmallow>=3.2.0
+-  marshmallow>=4.0
+-  packaging
 
 Installation
 ============
@@ -167,43 +176,64 @@ Usage
 =====
 
 
-1. Create a ``jira.cfg`` and put it at least in one of following places.
+1. From a source checkout, copy the shipped ``jira.cfg.example`` to
+   ``jira.cfg``. The wheel installs only ``pytest_jira.py`` and
+   ``issue_model.py``, so ``pip install pytest_jira`` does not ship the file -
+   use the template in the next block instead:
+
+   .. code:: sh
+
+     cp jira.cfg.example jira.cfg
+
+   Then put your ``jira.cfg`` at least in one of following places. It is read
+   from all of them, later files overriding earlier ones.
 
    * /etc/jira.cfg
-   * ~/jira.cfg
    * tests\_root\_dir/jira.cfg
-   * tests\_test\_dir/jira.cfg
+   * ~/jira.cfg
+   * ./jira.cfg (current working directory)
 
-   The configuration file is loaded in that order mentioned above.
-   That means that first options from global configuration are loaded,
-   and might be overwritten by options from user's home directory and
-   finally these might be overwritten by options from test's root directory.
+   ``jira.cfg`` is git ignored, so credentials stay out of version control;
+   ``jira.cfg.example`` is the template and is safe to commit.
 
-   See example bellow, you can use it as template, and update it according
-   to your needs.
+   See the example below; use it as a template and adapt it to your needs.
+   It lists the same options as the ``jira.cfg.example`` in a source checkout,
+   which also documents the file search order.
 
    .. code:: ini
 
      [DEFAULT]
      url = https://jira.atlassian.com
-     username = USERNAME (or blank for no authentication)
-     password = PASSWORD (or blank for no authentication)
-     token = TOKEN (either use token or username and password)
-     # ssl_verification = True/False
+     # Leave the credential fields empty for anonymous access.
+     username =
+     password =
+     token =
+     # cloud_id marks the url as Jira Cloud, where a bare token is not a valid
+     # credential (exit 4). A Server/Data Center setup with a personal access
+     # token must leave it empty; it is required for the OAuth service account.
+     cloud_id =
+     oauth_client_id =
+     oauth_client_secret =
+     # oauth_client_secret is a long-lived credential: keep this file readable by
+     # you only (`chmod 600 jira.cfg`) and prefer PYTEST_JIRA_OAUTH_CLIENT_SECRET,
+     # which leaves nothing on disk.
+     # ssl_verification = True/False  (False also allows a plain http url;
+     #                                ignored for an OAuth service account)
      # version = foo-1.0
      # components = com1,second component,com3
-     # strategy = [open|strict|warn|ignore] (dealing with not found issues)
+     # marker_strategy = [open|strict|warn|ignore] (not found issues)
      # docs_search = False (disable searching for issue id in docs)
      # issue_regex = REGEX (replace default `[A-Z]+-[0-9]+` regular expression)
      # resolved_statuses = comma separated list of statuses (closed, resolved)
      # resolved_resolutions = comma separated list of resolutions (done, fixed)
      # run_test_case = True (default value for 'run' parameter)
-     # error_strategy [strict|skip|ignore] Choose how to handle connection errors
+     # error_strategy = [strict|skip|ignore] (how to handle connection errors)
      # return_jira_metadata = False (return Jira issue with metadata instead of boolean result)
      # connection_retry_total = 5 (number of retries)
-     # connection_retry_backoff_factor = 0.2 ( connection retry backoff factor)
+     # connection_retry_backoff_factor = 0.2 (connection retry backoff factor)
 
-   Alternatively, you can set the url, password, username and token fields using relevant environment variables:
+   Alternatively, every connection field can come from an environment
+   variable:
 
     .. code:: sh
 
@@ -211,8 +241,13 @@ Usage
       export PYTEST_JIRA_PASSWORD="FOO"
       export PYTEST_JIRA_USERNAME="BAR"
       export PYTEST_JIRA_TOKEN="TOKEN"
+      export PYTEST_JIRA_CLOUD_ID="CLOUD_ID"
+      export PYTEST_JIRA_OAUTH_CLIENT_ID="CLIENT_ID"
+      export PYTEST_JIRA_OAUTH_CLIENT_SECRET="CLIENT_SECRET"
 
-   Configuration options can be overridden with command line options as well.
+   The ``PYTEST_JIRA_*`` environment variables win over both ``jira.cfg``
+   and the command line options; every other option can also be given on
+   the command line.
    For all available command line options run following command.
 
    .. code:: sh
@@ -228,6 +263,254 @@ Usage
 3. Run py.test with jira option to enable the plugin.
 
    ``py.test --jira``
+
+Authentication (Jira Cloud and Server/DC)
+==========================================
+
+.. note::
+
+   Breaking changes for existing setups:
+
+   * credentials are refused over plain ``http://`` (use ``https``, or
+     ``--jira-no-ssl-verify`` to opt into insecure transport);
+   * ``--jira`` without a configured ``url`` is now a usage error instead of
+     running every test without issue checks;
+   * a bare token on a ``.atlassian.net`` url, or next to a ``cloud_id``,
+     now aborts with exit code 4 instead of failing each marked test at
+     request time (a Cloud token needs a username or an OAuth 2.0
+     credential);
+   * a ``404`` from the authentication probe is no longer mistaken for a
+     missing issue: it raises under ``error_strategy=strict`` (the default)
+     and skips under ``skip``. It used to be answered by the marker strategy,
+     so a wrong url or cloud id made the issue look open and the test silently
+     xfailed (``open``, the default) or skipped instead of reporting it.
+
+There are exactly two ways to authenticate against Jira Cloud, plus the
+Server/Data Center personal access token:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Who
+     - Configure
+     - Wire
+   * - User (Jira Cloud)
+     - ``url`` + ``username`` (your email) + ``token`` (API token)
+     - basic auth to the site URL
+   * - Service account (Jira Cloud)
+     - ``url`` + ``cloud_id`` + ``oauth_client_id`` + ``oauth_client_secret``
+     - OAuth 2.0 access token, Bearer to the API gateway
+   * - Jira Server/Data Center
+     - ``url`` + ``token`` (personal access token)
+     - Bearer to the URL as configured
+
+A **token on its own is not a valid Jira Cloud configuration** and the plugin
+stops with an explanation instead of sending it: a Cloud token belongs either
+to a user (then it needs the email as the username) or to a service account
+(then it needs the OAuth 2.0 credential). A ``cloud_id`` marks the ``url``
+as Jira Cloud, so this holds on any host, not only on a ``.atlassian.net``
+url.
+
+User (Jira Cloud)
+-----------------
+
+.. code:: sh
+
+  export PYTEST_JIRA_URL="https://your-site.atlassian.net"
+  export PYTEST_JIRA_USERNAME="you@example.com"
+  export PYTEST_JIRA_TOKEN="<API token>"
+
+  py.test --jira
+
+Service account (Jira Cloud)
+----------------------------
+
+A service account uses an *OAuth 2.0 credential*: the client id and the
+permanent client secret. The plugin exchanges them at
+``https://auth.atlassian.com/oauth/token`` (``client_credentials``) for a
+short-lived access token, caches it until shortly before it expires, and
+sends it as a Bearer token to
+``https://api.atlassian.com/ex/jira/<cloudId>``. The client secret never
+reaches the API gateway.
+
+.. code:: sh
+
+  export PYTEST_JIRA_URL="https://your-site.atlassian.net"
+  export PYTEST_JIRA_CLOUD_ID="<cloudId>"
+  export PYTEST_JIRA_OAUTH_CLIENT_ID="<client id>"
+  export PYTEST_JIRA_OAUTH_CLIENT_SECRET="<client secret>"
+
+  py.test --jira
+
+With the ``jira.cfg`` keys or command line options instead:
+``--jira-cloud-id`` / ``cloud_id``, ``--jira-oauth-client-id`` /
+``oauth_client_id`` and ``--jira-oauth-client-secret`` /
+``oauth_client_secret``. Prefer the
+environment variable or ``jira.cfg`` for the secret: a command line value is
+visible in the process list.
+
+Creating the credential
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Both values come from an Atlassian app in the developer console, not from
+the Jira site itself:
+
+* Create an app and enable the ``client_credentials`` (OAuth 2.0) grant, so
+  the plugin can mint a token without any user consent step. That app's
+  client id and client secret are ``oauth_client_id`` and
+  ``oauth_client_secret``.
+* Grant the app access to your Jira site with the ``read:jira-work`` scope;
+  ``read:jira-user`` is optional and only lets the startup probe
+  (``/rest/api/2/myself``) answer instead of returning 403.
+* ``cloud_id`` is the cloud id of that site - it is not the host name. Read
+  the ``cloudId`` from the site's
+  ``https://<site>.atlassian.net/_edge/tenant_info`` (open it in a browser),
+  or from the app's API-access page in the Atlassian developer console. The
+  plugin builds the gateway ``https://api.atlassian.com/ex/jira/<cloudId>``
+  from it, so keep ``url`` as the site URL.
+
+  The ``id`` field of
+  ``GET https://api.atlassian.com/oauth/token/accessible-resources`` holds the
+  same value, but that is an OAuth 2.0 three-legged endpoint: it only answers
+  for a token minted after a *user* authorised an app. The
+  ``client_credentials`` grant used here has no user, so use that endpoint
+  only if you already have such a token.
+
+Notes:
+
+* Do not set a username or a token: the minted access token is sent as a
+  Bearer token. A lone stray ``username`` or ``token`` is ignored with a
+  warning, and an OAuth pair with a missing half is a usage error (exit code
+  4) when nothing else can authenticate. The two lists under *Failure
+  behaviour* enumerate every combination and its outcome.
+* ``cloud_id`` is always required: the plugin derives the gateway from it.
+  ``url`` stays the site URL and is only used for browse links
+  (``https://<site>.atlassian.net/browse/<issue>``); pointing ``url`` at
+  ``https://api.atlassian.com/ex/jira/<cloudId>`` is accepted but then the
+  skip/xfail reasons cannot link to an issue page (a warning says so).
+* ``--jira-no-ssl-verify`` is ignored for a service account: its access
+  token is only ever sent over verified TLS (a warning says so).
+* A failed mint stops the run with the HTTP status and which value to check
+  when the token endpoint answers, or with the transport error and no status
+  when it cannot be reached at all, under the default
+  ``error_strategy=strict``. With ``skip`` the marked tests
+  are skipped with the connection message, with ``ignore`` no skip is added
+  and they run; either way the reason is printed once on stderr. The client
+  secret is never included in messages.
+* Scopes are not permissions: the service account must also have product
+  access to Jira and *Browse projects* on every project you mark tests with,
+  or Jira answers ``404`` and the issue looks missing to the plugin.
+
+Jira Server/Data Center
+-----------------------
+
+.. code:: sh
+
+  export PYTEST_JIRA_URL="https://jira.example.com"
+  export PYTEST_JIRA_TOKEN="<personal access token>"
+
+  py.test --jira
+
+A Bearer token is used as configured; no cloud id, no OAuth credential.
+Server/Data Center also accepts ``username`` + ``password``
+(``--jira-user`` / ``--jira-password``) for basic auth. Jira Cloud has
+rejected password basic auth since 2019: use an API token.
+
+Failure behaviour
+-----------------
+
+A configuration the plugin cannot use aborts the run with exit code 4
+(``USAGE_ERROR``) and one clear message instead of a traceback:
+
+* a bare token on a Jira Cloud host (site URL or API gateway), or a bare
+  token next to a ``cloud_id`` on any host - a ``cloud_id`` marks the url as
+  Jira Cloud, where a bare token is not a valid credential,
+* an OAuth credential with a missing half and no other usable credential, or
+  an OAuth credential without a ``cloud_id``,
+* ``username`` + ``password`` on Jira Cloud (it only accepts API tokens),
+* a ``url`` that carries credentials over plain ``http://``,
+* a ``url`` with no ``http://``/``https://`` scheme (``jira.example.com``)
+  or with any other scheme, since it cannot be sent as given,
+* a ``url`` with no host at all (``https://`` on its own),
+* the API gateway as ``url`` for a user or a Server/DC token,
+* ``--jira`` without any ``url``,
+* a minted access token rejected by the API gateway.
+
+For an OAuth service account, credentials rejected by the authentication
+probe (``/rest/api/2/myself``) also end the run this way under the default
+``error_strategy=strict``. With ``skip`` the marked tests are skipped with
+the connection message, with ``ignore`` no skip is added and they run; the
+hint is printed once on stderr either way. A 403 from that probe still
+counts as authenticated (a scoped service account may only hold
+``read:jira-work``); only 401 means wrong credentials.
+
+A user or Server/DC connection keeps its previous behaviour: a failed
+request raises under ``strict`` and skips under ``skip``, with no extra
+diagnostics.
+
+Several combinations are answerable rather than fatal, and are reported on
+stderr: an OAuth credential ignored because a username with a token/password
+is set, a token/username/password ignored because an OAuth credential is
+set, a password without a username, a half OAuth credential next to a
+*usable* credential (a ``username`` with a ``token`` or ``password``, or a
+bare ``token``) - a lone ``username`` plus half a pair still exits 4 - an
+ignored ``cloud_id`` (next to a username with a token or a
+password, and with no credentials at all), a gateway ``url`` that cannot
+produce browsable links, credentials embedded in the ``url`` (lifted into
+basic auth), plain ``http`` allowed because ``--jira-no-ssl-verify`` is set,
+and that flag being ignored for a service account.
+
+Errors on individual issues are split by status once the connection itself
+succeeded: a ``404`` means the issue is not visible, so it is answered by
+``--jira-marker-strategy`` (``open`` by default), and every other
+post-connection 4xx keeps the ``--jira-connection-error-strategy``
+behaviour. For an OAuth
+service account a ``401`` on an issue is still a credential failure - a
+permission problem on one issue is a ``403`` - so under ``strict`` it ends the
+run with exit code 4 and the auth hint, even when the authentication probe
+succeeded.
+
+The re-mint heal is bounded per chain of ``401``s: a ``401`` is answered by one
+re-mint, and if the freshly minted token is rejected too, no further re-mint
+follows until another response proves a token valid - a 401 on a token minted
+moments earlier is deterministic, so a second mint could only reach the same
+401. A response that proves the token authenticated - a **sub-400 status**,
+or a ``4xx`` other than ``401``/``429`` - resets that, so a later,
+independent revocation still heals; a ``5xx`` or ``429`` does not, since
+those are returned before the credential is checked, so a server incident
+cannot turn into extra token requests. A persisting ``401`` still fails
+loudly under ``strict`` and still warns once under ``skip``/``ignore``.
+
+Common notes
+------------
+
+* Values read from environment variables may be quoted
+  (``PYTEST_JIRA_URL="https://..."``); a matching pair of surrounding quotes
+  and any whitespace are stripped.
+* ``PYTEST_JIRA_*`` environment variables win over ``jira.cfg`` *and* the
+  command line options.
+* Every Jira request has a 30 s timeout, and a server-supplied
+  ``Retry-After`` is capped at 10 s, so neither a stalled server nor a
+  ``429``/``503`` carrying a long ``Retry-After`` can hold an attempt longer: a
+  stall surfaces as a ``Read timed out`` failure instead of hanging the run.
+* Keep credentials out of the ``url``. If you embed them, the plugin lifts
+  them into basic auth and warns. A ``url`` whose credentials are glued to the
+  scheme - an ``@`` with no host behind it, ``https://user:pw@/`` - aborts with
+  exit code 4 and the hint that a literal ``@`` in the password must be
+  percent-encoded as ``%40``. Prefer ``username``/``token`` (or the
+  environment variables).
+* Credentials are refused over plain ``http://``. ``--jira-no-ssl-verify``
+  is the escape hatch: it allows a plain ``http`` url (with a warning), and
+  it disables TLS verification for the Jira requests. For an OAuth service
+  account it is ignored - the access token is only sent over verified TLS.
+* Running the plugin's own test suite: set either ``TEST_JIRA_USER`` and
+  ``TEST_JIRA_TOKEN`` (user), or ``TEST_JIRA_OAUTH_CLIENT_ID``,
+  ``TEST_JIRA_OAUTH_CLIENT_SECRET`` and ``TEST_JIRA_CLOUD_ID`` (service
+  account); ``TEST_JIRA_URL`` selects the site. All of them are in
+  ``tox.ini``'s ``passenv``, and the CI workflow forwards all six from the
+  repository secrets, so both auth paths run in CI; when a secret is absent
+  the corresponding tests skip.
+
 
 Tests
 =====
