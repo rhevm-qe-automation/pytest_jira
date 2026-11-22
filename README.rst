@@ -539,6 +539,12 @@ Common notes
   ``--jira-connection-error-strategy``. A literal ``@`` in an embedded
   password must be percent-encoded as ``%40``. Prefer ``username``/``token``
   (or the environment variables).
+* A url the plugin has to print - a message, a skip/xfail reason, a
+  traceback - never shows embedded credentials: the userinfo of a clean url
+  is stripped and the rest kept, and any other url-ish text that could carry
+  credentials is printed as ``<url>``. When that redaction is what the site
+  url comes back as, the reason carries the bare ticket key instead of
+  ``<url>/browse/<key>``.
 * Credentials are refused over plain ``http://``: a token, or a username
   with a password, would be sent in clear text. ``--jira-no-ssl-verify``
   (or ``ssl_verification = False``) is the explicit escape hatch: it allows
