@@ -61,14 +61,9 @@ SA_TOKEN_REFRESH_MARGIN = 120
 SA_TOKEN_MIN_LIFETIME = 300
 _SA_TOKEN_CACHE = {}
 _SA_TOKEN_FAILURES = {}
-CLOUD_CREDENTIALS_ERROR = (
-    "On Jira Cloud a token on its own means nothing: a bare token is not "
-    "a service account.\n"
-    "Use one of the two supported ways:\n"
-    "  * a user: --jira-user <your email> with --jira-token <API token>\n"
-    "  * a service account: --jira-oauth-client-id, "
-    "--jira-oauth-client-secret and --jira-cloud-id"
-)
+# pytest's usage-error code, spelled out rather than read from pytest.ExitCode
+# so that an old pytest without the enum still fails instead of exiting 0.
+USAGE_ERROR_CODE = getattr(getattr(pytest, "ExitCode", None), "USAGE_ERROR", 4)
 CLOUD_OAUTH_NEEDS_CLOUD_ID = (
     "An OAuth 2.0 service account needs the cloud id: pass --jira-cloud-id "
     "<cloudId> (or set cloud_id in jira.cfg / PYTEST_JIRA_CLOUD_ID). The "
@@ -87,31 +82,6 @@ MISSING_URL_ERROR = (
     "--jira needs a Jira url: pass --jira-url, set PYTEST_JIRA_URL or put "
     "url in jira.cfg. Without it no issue check can run."
 )
-CREDENTIALS_NEED_TLS_ERROR = (
-    "Credentials must not be sent over plain http: use an https url for "
-    "the Jira site (or for the API gateway)."
-)
-CLOUD_NEEDS_API_TOKEN_ERROR = (
-    "Jira Cloud does not accept password authentication: pass an API token "
-    "with --jira-token (or use an OAuth 2.0 service account with "
-    "--jira-oauth-client-id/--jira-oauth-client-secret)."
-)
-URL_WITHOUT_HOST_ERROR = (
-    "The url has no host, so no request can be made to it. Check "
-    "--jira-url / PYTEST_JIRA_URL / the url in jira.cfg."
-)
-URL_SCHEME_ERROR = (
-    "The url must start with http:// or https://, but its scheme is %s. "
-    "A url with no scheme (e.g. jira.example.com), or one whose scheme is "
-    "not http(s), cannot be sent as given. Check --jira-url / "
-    "PYTEST_JIRA_URL / the url in jira.cfg."
-)
-MALFORMED_URL_CREDENTIALS = (
-    "The url looks like credentials glued to the scheme: it has an '@' "
-    "but no host behind it, so no request can be made. A literal '@' in "
-    "a password must be percent-encoded as %40; better still, pass the "
-    "credentials with --jira-user / --jira-token instead of in the url."
-)
 # Upper bound for one Jira request attempt, so a stalled server cannot hang
 # the whole test session (retries multiply it).
 JIRA_REQUEST_TIMEOUT = 30
@@ -124,12 +94,6 @@ TOKEN_RETRY_BACKOFF_FACTOR = 0.5
 MAX_RETRY_AFTER = 10
 # Lifetime assumed when the token endpoint reports none.
 SA_TOKEN_ASSUMED_LIFETIME = 3600
-GATEWAY_NEEDS_OAUTH_ERROR = (
-    "The API gateway (https://api.atlassian.com/ex/jira/<cloudId>) only "
-    "accepts an OAuth 2.0 service account. For a user set --jira-url to the "
-    "site URL (https://<site>.atlassian.net) and pass --jira-user with "
-    "--jira-token."
-)
 UNUSED_CLOUD_ID_WARNING = (
     "pytest-jira: cloud_id only applies to a Jira Cloud service account; "
     "without an OAuth 2.0 credential it is ignored and %s is used as "
@@ -147,12 +111,10 @@ OAUTH_AUTH_ERROR_HINT = (
 
 
 def _clean(value):
-    """Strip whitespace and a matching pair of surrounding quotes.
+    """Strip whitespace and a matched pair of surrounding quotes.
 
-    Values from .env style files are often quoted
-    (PYTEST_JIRA_URL="https://..."), and those quotes are not part of it.
-    Only a matched pair is removed: a password such as ``my"pass"`` is a
-    legitimate value and must survive untouched.
+    .env style files often quote a value (PYTEST_JIRA_URL="https://...").
+    Only a matched pair goes: a password such as ``my"pass"`` must survive.
     """
     if not isinstance(value, str):
         return value
@@ -167,79 +129,72 @@ def _get_setting(env_var, config, name):
     return _clean(os.getenv(env_var)) or _clean(config.getvalue(name))
 
 
-# Userinfo between "scheme://" and the host, as it appears in a message.
-_USERINFO_RE = re.compile(r"(?<=://)[^/\s@]+@")
+# One url-ish run of text that still carries userinfo. No "://" anchor on
+# purpose: a message quotes back whatever url it was given, and a wrong config
+# produces shapes with one slash, no scheme or no host prefix at all.
+_USERINFO_RE = re.compile(r"[^\s'\"]*@[^\s'\"]*")
+# Where the authority of such a run starts: after a scheme and its slashes.
+_AUTHORITY_START_RE = re.compile(r"(?:[a-zA-Z][\w+.-]*:)?/+")
+_AUTHORITY_END_RE = re.compile(r"[/?#]")
+# What a run is replaced with when its userinfo cannot be bounded.
+_URL_PLACEHOLDER = "<url>"
+
+
+def _without_userinfo(match):
+    """Return one url-ish run of text without the userinfo of its authority.
+
+    The authority is delimited by its own bounds instead of a ``://`` anchor,
+    so ``https:/user:pw@host`` (which parses as a path), ``//user:pw@host``
+    and ``user:pw@host`` are found too. Two cases:
+
+    * An ``@`` in the authority with no ``@`` after it is userinfo: it is
+      split on its LAST ``@`` (an unescaped ``@`` in the password belongs to
+      the credentials), and the raw ``host[:port]`` is kept as written, so a
+      malformed port survives.
+    * No ``@`` at all: the run is returned unchanged.
+
+    Any other ``@`` cannot be bounded, so the run fails closed and becomes
+    ``<url>``. That covers a path or query ``@``
+    (``https://host/p?email=me@example.com``) as well as a raw ``/`` inside
+    the password (``https://u:pw/x@h``): a wrongly redacted link is better
+    than a leaked credential.
+    """
+    text = match.group()
+    slashed = _AUTHORITY_START_RE.match(text)
+    start = slashed.end() if slashed else 0
+    found = _AUTHORITY_END_RE.search(text, start)
+    end = found.start() if found else len(text)
+    authority = text[start:end]
+    if "@" in authority and "@" not in text[:start] + text[end:]:
+        return text[:start] + authority.rpartition("@")[2] + text[end:]
+    if "@" not in text:
+        return text
+    return _URL_PLACEHOLDER
 
 
 def _strip_userinfo(text):
-    """Remove any userinfo that still follows a scheme in text."""
-    return _USERINFO_RE.sub("", text)
-
-
-def _request_error_text(exc):
-    """Describe a failed request without leaking credentials.
-
-    ``requests`` embeds the full request URL in its messages, and a URL may
-    carry userinfo (``https://user:secret@host``), so the URL is redacted
-    before the text reaches a skip reason, a report or a traceback.
-    """
-    text = str(exc)
-    response = getattr(exc, "response", None)
-    request = getattr(exc, "request", None)
-    url = getattr(response, "url", None) or getattr(request, "url", None)
-    if url:
-        text = text.replace(url, _redacted(url))
-    # requests may also embed a url we know nothing about; strip userinfo
-    return _strip_userinfo(text)
-
-
-def _netloc_host(parsed):
-    """Return the host[:port] of a parsed url, keeping IPv6 brackets."""
-    host = parsed.hostname or ""
-    if ":" in host:
-        host = "[%s]" % host
-    try:
-        port = parsed.port
-    except ValueError:  # a malformed port is not ours to fix
-        port = None
-    if port:
-        host = "%s:%s" % (host, port)
-    return host
-
-
-def _redacted(url):
-    """Return url without any userinfo, so it is safe to print."""
-    text = url or ""
-    parsed = urlparse(text if "://" in text else "//" + text)
-    if "@" not in parsed.netloc:
-        return _strip_userinfo(text)
-    clean = parsed._replace(netloc=_netloc_host(parsed)).geturl()
-    return clean if "://" in text else clean[2:]
+    """Remove any userinfo from the urls in text, keeping host and port."""
+    return _USERINFO_RE.sub(_without_userinfo, text)
 
 
 def _split_url_userinfo(url):
     """Return ``(url_without_userinfo, user, password)``.
 
-    Credentials embedded in a URL end up in tracebacks and reports, so they
-    are lifted out and used as basic-auth credentials instead.
+    Credentials embedded in a URL would end up in tracebacks and reports, so
+    they are lifted out and used as basic-auth credentials instead.
     """
     parsed = urlparse(url or "")
     if "@" not in parsed.netloc:
         return url, None, None
     user = parsed.username
     password = parsed.password
-    host = _netloc_host(parsed)
-    clean = parsed._replace(netloc=host).geturl().rstrip("/")
+    clean = url.replace(parsed.netloc, parsed.netloc.rpartition("@")[2], 1)
+    clean = clean.rstrip("/")
     return (
         clean,
         unquote(user) if user else None,
         (unquote(password) if password else None),
     )
-
-
-def _is_cloud_site(url):
-    """Return True for a bare Jira Cloud site URL."""
-    return _host(url).endswith(".atlassian.net")
 
 
 def _is_gateway_url(url):
@@ -250,16 +205,10 @@ def _is_gateway_url(url):
     )
 
 
-def _is_cloud_or_gateway(url):
-    """Return True for a Jira Cloud site URL or the API gateway."""
-    return _is_cloud_site(url) or _is_gateway_url(url)
-
-
 def _host(url):
     """Return the bare host of url, tolerating a missing scheme.
 
-    Netloc would keep a port and any userinfo
-    (``example.atlassian.net:443``), which would hide a Cloud site.
+    Netloc would keep a port and any userinfo, which would hide the host.
     """
     url = (url or "").lower()
     host = urlparse(url).hostname
@@ -269,18 +218,13 @@ def _host(url):
 
 
 class JiraConfigError(ValueError):
-    """A Jira configuration that cannot work.
-
-    The plugin reports it as a pytest usage error; the message is shown to
-    the user, so it must stay free of secrets.
-    """
+    """A Jira configuration that cannot work: shown to the user, so its
+    message must stay free of secrets."""
 
 
 class JiraOAuthMintError(RuntimeError):
-    """Raised when an OAuth 2.0 access token cannot be minted.
-
-    The message is safe to show: it never contains the client secret.
-    """
+    """An OAuth 2.0 access token cannot be minted; the message is safe to
+    show, it never contains the client secret."""
 
 
 def _credential_key(client_id, client_secret):
@@ -299,18 +243,17 @@ def _forget_access_token(client_id, client_secret):
 class _CappedRetry(urllib3.Retry):
     """Retry that will not wait longer than MAX_RETRY_AFTER seconds.
 
-    urllib3 honours the server's ``Retry-After`` header verbatim, so a 429
-    carrying an hour would block the mint for an hour. ``get_retry_after``
-    only parses the header, so capping it there bounds the wait without
-    sleeping in this method.
+    urllib3 honours ``Retry-After`` verbatim, so a 429 carrying an hour
+    would block the mint for an hour. Capping the parsed value bounds the
+    wait without sleeping here.
     """
 
     def get_retry_after(self, response):
         try:
             seconds = super().get_retry_after(response)
         except (ValueError, TypeError, urllib3.exceptions.InvalidHeader):
-            # An unparseable Retry-After raises inside urllib3's sleep; it is
-            # not a requests error and would escape every handler.
+            # An unparseable value raises inside urllib3's sleep, escaping
+            # every handler: treat it as no header at all.
             return None
         if not seconds:
             return seconds
@@ -327,8 +270,8 @@ _TRANSPORT_ERRORS = (
 def _token_session():
     """Return a session that retries the token endpoint on 429/5xx.
 
-    The mint is one extra request next to the Jira calls, and a transient
-    failure there should not kill the run. ``Retry-After`` is honoured.
+    A transient mint failure should not kill the run: it is one extra request
+    next to the Jira calls, and ``Retry-After`` is honoured.
     """
     session = requests.Session()
     retries = _CappedRetry(
@@ -348,8 +291,8 @@ def _mint_access_token(client_id, client_secret):
 
     POSTs ``client_credentials`` to the Atlassian token endpoint and caches
     the result until ``SA_TOKEN_REFRESH_MARGIN`` seconds before it expires.
-    The endpoint is always contacted with TLS verification on and without
-    following redirects, because the request carries the client secret.
+    TLS verification stays on and redirects are not followed, because the
+    request carries the client secret.
     """
     key = _credential_key(client_id, client_secret)
     now = time.monotonic()
@@ -387,27 +330,24 @@ def _mint_access_token(client_id, client_secret):
                 "PYTEST_JIRA_OAUTH_CLIENT_SECRET." % response.status_code
             )
             if response.status_code in (400, 401, 403):
-                # A rejected credential will not heal: remembering it saves
-                # a POST per marked issue.
+                # A rejected credential will not heal: remember it to save a
+                # POST per marked issue. A 429/5xx that survived the retries is
+                # transient, so it is raised uncached and can retry.
                 _SA_TOKEN_FAILURES[key] = message
-            # A 429/5xx that survived the retries is transient, so it is
-            # raised without being cached and a later call can retry.
             raise JiraOAuthMintError(message)
         try:
             payload = response.json()
             access_token = payload["access_token"]
             raw_expires = payload.get("expires_in")
-            # absent or null: assume the usual hour. An explicit 0 or
-            # negative keeps meaning "no usable lifetime" and falls to the
-            # short floor.
+            # absent or null: assume the usual hour. An explicit 0 or negative
+            # keeps meaning "no usable lifetime" and falls to the short floor.
             expires_in = (
                 SA_TOKEN_ASSUMED_LIFETIME
                 if raw_expires is None
                 else float(raw_expires)
             )
         except (ValueError, KeyError, TypeError) as exc:
-            # A garbled response says nothing about the credential: only
-            # 400/401/403 are remembered, everything else retries.
+            # A garbled response says nothing about the credential: retry.
             raise JiraOAuthMintError(
                 "Could not mint an Atlassian access token: unexpected "
                 "response from %s." % ATLASSIAN_TOKEN_URL
@@ -439,32 +379,17 @@ def _resolve_auth(
 
     Returns a :class:`ResolvedAuth`: ``mode`` (one of the ``AUTH_*``
     constants, or ``None`` when no credentials are configured), ``api_url``
-    (where requests go), ``site_url`` (what browse
-    links use, empty when it cannot be derived), ``warnings`` (messages for
-    stderr) and the effective ``username``/``password`` (which may come from
-    the url's userinfo). Raises
-    :class:`JiraConfigError` for combinations that cannot work, so the
-    failure surfaces before any request is made.
+    (where requests go), ``site_url`` (what browse links use, empty when it
+    cannot be derived), ``warnings`` (messages for stderr) and the effective
+    ``username``/``password`` (which may come from the url's userinfo).
+
+    Only a service account without a cloud id raises
+    :class:`JiraConfigError`: every other combination is left to fail at
+    request time, the way a plain token or a plain url always has.
     """
     url = (url or "").rstrip("/")
     warnings = []
-    parsed = urlparse(url)
-    if parsed.scheme.lower() not in ("http", "https"):
-        if _host(url):
-            # The host is there, the scheme is not http(s): requests cannot
-            # send a scheme-less url as given, and neither can it send ftp.
-            raise JiraConfigError(
-                URL_SCHEME_ERROR % (parsed.scheme.lower() or "none")
-            )
-        raise JiraConfigError(URL_WITHOUT_HOST_ERROR)
-    if "@" in url and not parsed.hostname:
-        # An '@' with no host behind it: the credentials are glued to the
-        # scheme (https://user:pw@/, https:/user:pw@host), not a userinfo
-        # the request could use. A literal '@' in a password must be %40.
-        raise JiraConfigError(MALFORMED_URL_CREDENTIALS)
     url, url_user, url_password = _split_url_userinfo(url)
-    if not urlparse(url).hostname:
-        raise JiraConfigError(URL_WITHOUT_HOST_ERROR)
     if url_user:
         warnings.append(
             "pytest-jira: credentials embedded in the url are used for "
@@ -475,19 +400,13 @@ def _resolve_auth(
             username = url_user
             password = password or url_password
     has_user = bool(username and (token or password))
-    if has_user and not token and _is_cloud_or_gateway(url):
-        raise JiraConfigError(CLOUD_NEEDS_API_TOKEN_ERROR)
     if bool(oauth_client_id) != bool(oauth_secret):
-        message = (
-            "The OAuth 2.0 credential is incomplete: set both "
-            "--jira-oauth-client-id and --jira-oauth-client-secret (or "
-            "neither)."
-        )
-        if not (has_user or token):
-            # Nothing else can authenticate: this is the real error.
-            raise JiraConfigError(message)
         # A leftover half-pair must not break a working user connection.
-        warnings.append("pytest-jira: %s Ignoring it." % message)
+        warnings.append(
+            "pytest-jira: The OAuth 2.0 credential is incomplete: set both "
+            "--jira-oauth-client-id and --jira-oauth-client-secret (or "
+            "neither). Ignoring it."
+        )
     has_oauth = bool(oauth_client_id and oauth_secret)
     if has_user and has_oauth:
         warnings.append(
@@ -516,26 +435,14 @@ def _resolve_auth(
                     "pytest-jira: the %s is ignored because an OAuth 2.0 "
                     "service account is configured." % name
                 )
-    elif token and (_is_cloud_or_gateway(url) or cloud_id):
-        # A cloud id says "this is Jira Cloud", where a bare token is never
-        # a valid credential: on a Cloud site behind a custom domain the
-        # token would silently go out as a Server/DC PAT Bearer and fail
-        # later with an opaque 401. A username+token or anonymous setup
-        # keeps its cloud id ignored (see UNUSED_CLOUD_ID_WARNING below).
-        raise JiraConfigError(CLOUD_CREDENTIALS_ERROR)
     elif token:
         mode = AUTH_PAT
     else:
         mode = None
 
     if mode != AUTH_OAUTH:
-        if _is_gateway_url(url):
-            # The gateway only accepts OAuth service-account tokens; sending
-            # a user's basic credentials or a PAT there is a configuration
-            # error, not a request worth making.
-            raise JiraConfigError(GATEWAY_NEEDS_OAUTH_ERROR)
         if cloud_id:
-            warnings.append(UNUSED_CLOUD_ID_WARNING % _redacted(url))
+            warnings.append(UNUSED_CLOUD_ID_WARNING % _strip_userinfo(url))
         return ResolvedAuth(mode, url, url, warnings, username, password)
 
     if not cloud_id:
@@ -554,210 +461,118 @@ def _resolve_auth(
 def _unauthorized_status(exc):
     """Return 401 for an authentication failure, or None for anything else.
 
-    Only 401 means the credentials are wrong. A 403 authenticated the
-    caller (it just may not read the resource), and everything else is not
-    an auth problem at all.
+    A 403 authenticated the caller (it just may not read the resource), so
+    only 401 means the credentials are wrong.
     """
     response = getattr(exc, "response", None)
     status = getattr(response, "status_code", None)
     return status if status == 401 else None
 
 
-def _auth_hint(exc, conn):
-    """Return actionable guidance for a rejected credential.
+def _hint(exc, conn):
+    """Return actionable guidance for a failed request, or None.
 
-    A 401 is always about the credential: in Jira a permission problem on a
-    single issue is a 403, so a 401 stays a credential failure even after
-    the probe succeeded (a token can be revoked between the two calls).
-    Staying silent there would let a strict run die as INTERNALERROR
-    instead of the documented usage error.
+    Only an OAuth 2.0 service account gets a hint: a user or a Server/DC
+    connection keeps the behaviour it always had. A 401 is always about the
+    credential (a permission problem on a single issue is a 403, and a token
+    can be revoked between two calls); a failed probe with any other status
+    means the url, the cloud id or the network is wrong. Silence would leave a
+    run skipping every test with no explanation.
     """
-    status = _unauthorized_status(exc)
-    if not status:
-        return None
     if not conn.oauth_mode:
-        # Only the OAuth path fails fast; see _handle_connection_error.
         return None
-    url = _redacted(conn.site_url or conn.get_url())
-    return OAUTH_AUTH_ERROR_HINT % (url, status)
-
-
-def _usage_error_code():
-    """Return the exit code for a configuration the user has to fix.
-
-    4 is pytest's usage-error code. It is spelled out rather than read from
-    ``pytest.ExitCode`` so that an old pytest (no ExitCode enum) still
-    reports a failure instead of exiting 0.
-    """
-    return getattr(getattr(pytest, "ExitCode", None), "USAGE_ERROR", 4)
-
-
-def _exit_on_auth_error(exc, conn, config=None):
-    """Fail fast with actionable guidance instead of a traceback."""
-    hint = _connection_hint(exc, conn)
-    if not hint:
-        return
-    if conn.oauth_mode and getattr(exc, "response", None) is None:
-        # A network failure (DNS, timeout, refused) is not a usage error:
-        # let the caller re-raise so the strategy decides what to do.
-        # Report the hint first: an unreachable host would otherwise be
-        # silent under strict, with nothing but a traceback to go on.
-        _warn_once(conn, "auth_warned", hint, config)
-        return
-    # Not the default INTERRUPTED (2): a broken credential setup is a usage
-    # error, not a Ctrl-C, and CI should not treat it as retryable.
-    pytest.exit(hint, returncode=_usage_error_code())
-
-
-def _exit_on_mint_error(exc):
-    """Abort with the minting error: no request can succeed without it."""
-    pytest.exit(str(exc), returncode=_usage_error_code())
-
-
-def _write_stderr(message, config=None):
-    """Write to the real stderr, bypassing pytest's capture.
-
-    Warnings raised while a test runs are captured and thrown away for a
-    skipped or passing test, which is exactly when the hint matters. This
-    never raises: it is called from a ``finally`` where a ``Skipped`` or an
-    ``Exit`` may already be in flight, and a failure here would replace that
-    exception with an ERROR.
-    """
-    try:
-        capture = None
-        if config is not None:
-            capture = config.pluginmanager.getplugin("capturemanager")
-        if capture is None:
-            print(message, file=sys.stderr)
-            return
-        with capture.global_and_fixture_disabled():
-            print(message, file=sys.stderr)
-    except Exception:
-        # A very old pytest has no global_and_fixture_disabled, and a capture
-        # manager can already be torn down: print anyway, best effort.
-        try:
-            print(message, file=sys.stderr)
-        except Exception:  # pragma: no cover - stderr is unusable
-            pass
-
-
-def _warn_once(conn, flag, message, config=None):
-    """Print a connection message once, bypassing pytest capture."""
-    if getattr(conn, flag, False):
-        return
-    setattr(conn, flag, True)
-    _write_stderr(message, config)
-
-
-def _report_pending_notices(conn, config=None):
-    """Emit the warnings a request only records, where a config exists.
-
-    ``check_connection`` and ``_jira_request`` run without a config when a
-    fixture calls them, and without one pytest's capture swallows the
-    message. ``_write_stderr`` never raises, so draining this from a
-    ``finally`` cannot mask the exception in flight. Each notice is printed
-    once per connection, however many requests recorded it.
-    """
-    if getattr(conn, "probe_forbidden", False):
-        setattr(conn, "probe_forbidden", False)
-        _write_stderr(PROBE_FORBIDDEN_WARNING, config)
-    url = getattr(conn, "remint_url", None)
-    if url:
-        _warn_once(conn, "remint_warned", TOKEN_REMINT_WARNING % url, config)
-
-
-def _warn_on_mint_error(exc, conn, config=None):
-    """Warn about a minting failure whatever the error strategy is.
-
-    A token cannot be minted without a valid credential, so this never
-    heals on its own: a green run would hide it.
-    """
-    if not isinstance(exc, JiraOAuthMintError):
-        return
-    _warn_once(conn, "mint_warned", str(exc), config)
-
-
-def _handle_connection_error(exc, conn, strategy, config=None):
-    """Warn, exit or re-raise for a failed request; shared by both hooks.
-
-    The fail-fast diagnostics belong to the new OAuth 2.0 service-account
-    path: a user or a Server/DC connection keeps the behaviour it always
-    had (raise under ``strict``, skip/ignore otherwise), so upgrading does
-    not change how an existing setup fails.
-
-    Must be called from an ``except`` handler: the strict path re-raises
-    the exception so its traceback stays intact.
-    """
-    mint_failure = isinstance(exc, JiraOAuthMintError)
-    if not (conn.oauth_mode or mint_failure):
-        if strategy == STRICT:
-            raise
-        return
-    if strategy == STRICT:
-        if mint_failure:
-            _exit_on_mint_error(exc)
-        _exit_on_auth_error(exc, conn, config)
-        # Redact at the reporting boundary: a requests message embeds the
-        # raw url, userinfo included. Rewriting ``args`` in place keeps
-        # this very exception object, so .response/.request stay usable for
-        # a classifier and no unredacted copy is chained into the
-        # traceback.
-        exc.args = (_request_error_text(exc),)
-        raise
-    _warn_on_mint_error(exc, conn, config)
-    if mint_failure:
-        # The mint error is the whole story. The auth hint would fall back to
-        # the probe wording and misdiagnose it as a wrong url or cloud id.
-        return
-    _warn_on_auth_error(exc, conn, config)
-
-
-def _connection_hint(exc, conn):
-    """Return the hint for a failed connection, or None.
-
-    ``_auth_hint`` only speaks about the OAuth path (a user or Server/DC
-    connection keeps its legacy behaviour), so a probe failure there with a
-    non-auth status still needs wording of its own.
-    """
-    hint = _auth_hint(exc, conn)
-    if hint is None and conn.oauth_mode and not conn.is_connected:
-        hint = _probe_failure_message(exc, conn)
-    return hint
-
-
-def _probe_failure_message(exc, conn):
-    """Return a warning for a failed probe with a non-auth status.
-
-    A wrong url or cloud id answers 404, not 401: without this the run would
-    skip or ignore every test with no explanation.
-    """
-    status = getattr(getattr(exc, "response", None), "status_code", None)
-    if status == 404:
+    url = _strip_userinfo(conn.site_url or conn.get_url())
+    status = _unauthorized_status(exc)
+    if status:
+        return OAUTH_AUTH_ERROR_HINT % (url, status)
+    if conn.is_connected:
+        return None
+    if getattr(getattr(exc, "response", None), "status_code", None) == 404:
         advice = "Check --jira-url and --jira-cloud-id."
     else:
         advice = "Check the Jira url, network access and the service account."
     return (
         "Could not authenticate the OAuth 2.0 service account against "
         "%s (%s): %s\n%s"
-        % (
-            _redacted(conn.site_url or conn.get_url()),
-            type(exc).__name__,
-            _request_error_text(exc),
-            advice,
-        )
+        % (url, type(exc).__name__, _strip_userinfo(str(exc)), advice)
     )
 
 
-def _warn_on_auth_error(exc, conn, config=None):
-    """Warn about credentials that cannot work, whatever the strategy.
+def _write_stderr(message, config=None):
+    """Write to the real stderr, bypassing pytest's capture.
 
-    With ``--jira-connection-error-strategy=skip`` every test would skip and
-    a green run would hide the misconfiguration. The hint is printed once
-    per connection, not once per marked test.
+    A hint raised while a test runs is captured and thrown away for a skipped
+    or passing test, which is exactly when it matters. It never raises: it
+    runs from a ``finally`` where a ``Skipped`` or an ``Exit`` may already be
+    in flight, and a failure here would replace it with an ERROR.
     """
-    hint = _connection_hint(exc, conn)
-    if hint:
-        _warn_once(conn, "auth_warned", hint, config)
+    try:
+        capture = None
+        if config is not None:
+            capture = config.pluginmanager.getplugin("capturemanager")
+        if capture is not None:
+            with capture.global_and_fixture_disabled():
+                print(message, file=sys.stderr)
+                return
+    except Exception:
+        # A torn-down capture manager, or a pytest without the hook.
+        pass
+    try:
+        print(message, file=sys.stderr)
+    except Exception:  # pragma: no cover - stderr is unusable
+        pass
+
+
+def _report_notices(conn, config=None):
+    """Emit the warnings a request only records, where a config exists.
+
+    ``check_connection`` and ``_jira_request`` run without a config when a
+    fixture calls them, and only a drain from a ``finally`` can report what
+    they recorded (``_write_stderr`` never raises, so this cannot mask the
+    exception in flight). Each notice is printed once per connection.
+    """
+    if conn.probe_forbidden:
+        conn.probe_forbidden = False
+        _write_stderr(PROBE_FORBIDDEN_WARNING, config)
+    if conn.remint_url and not conn.remint_warned:
+        conn.remint_warned = True
+        _write_stderr(TOKEN_REMINT_WARNING % conn.remint_url, config)
+
+
+def _report(exc, conn, strategy, config=None):
+    """Report a failed request once: warn, exit or re-raise.
+
+    Only the OAuth 2.0 service-account path gets fail-fast diagnostics: a user
+    or a Server/DC connection keeps the behaviour it always had (raise under
+    ``strict``, skip/ignore otherwise). Must be called from an ``except``
+    handler: the strict path re-raises so the traceback stays intact.
+    """
+    mint_failure = isinstance(exc, JiraOAuthMintError)
+    hint = None if mint_failure else _hint(exc, conn)
+    # Redact at the reporting boundary: a requests message embeds the raw url,
+    # userinfo included. Rewriting ``args`` in place keeps this very exception
+    # object (.response/.request stay usable) and chains no unredacted copy
+    # into the traceback.
+    exc.args = (_strip_userinfo(str(exc)),)
+    # A mint error is the whole story: the probe wording would misdiagnose it
+    # as a wrong url or cloud id.
+    notice = str(exc) if mint_failure else hint
+    if strategy == STRICT:
+        if mint_failure:
+            # No request can succeed without a token: nothing to retry.
+            pytest.exit(str(exc), returncode=USAGE_ERROR_CODE)
+        if hint and getattr(exc, "response", None) is not None:
+            # Not the default INTERRUPTED (2): a broken credential setup is a
+            # usage error, not a Ctrl-C, and CI should not retry it. A network
+            # failure is not a usage error: warned below, then raised.
+            pytest.exit(hint, returncode=USAGE_ERROR_CODE)
+    # Under skip or ignore every test would skip, and a green run would hide a
+    # credential that cannot work. One line per connection.
+    if notice and notice not in conn.warned:
+        conn.warned.add(notice)
+        _write_stderr(notice, config)
+    if strategy == STRICT:
+        raise
 
 
 class JiraHooks(object):
@@ -868,11 +683,13 @@ class JiraHooks(object):
                             if not skipif:
                                 continue
                         site_url = self.conn.site_url
-                        # The API gateway has no browsable site url: a bare
-                        # issue id beats a useless "/browse/ORG-1" link.
+                        # The API gateway has no browsable site url, and a
+                        # redacted one is not a link either: a bare issue id
+                        # beats a useless "<url>/browse/ORG-1".
+                        redacted = _strip_userinfo(site_url)
                         reason = (
-                            "%s/browse/%s" % (_redacted(site_url), issue_id)
-                            if site_url
+                            "%s/browse/%s" % (redacted, issue_id)
+                            if site_url and redacted != _URL_PLACEHOLDER
                             else issue_id
                         )
                         if jira_run:
@@ -880,14 +697,14 @@ class JiraHooks(object):
                         else:
                             item.add_marker(pytest.mark.skip(reason=reason))
                 except (requests.RequestException, JiraOAuthMintError) as e:
-                    _handle_connection_error(
+                    _report(
                         e, self.conn, self.connection_error_strategy, config
                     )
                     if self.connection_error_strategy == SKIP:
                         item.add_marker(
                             pytest.mark.skip(
                                 reason=CONNECTION_SKIP_MESSAGE
-                                % _request_error_text(e)
+                                % _strip_userinfo(str(e))
                             )
                         )
                     else:
@@ -895,7 +712,7 @@ class JiraHooks(object):
                 finally:
                     # A recorded notice must survive a raising issue check
                     # (and the exit the strict strategy raises).
-                    _report_pending_notices(self.conn, config)
+                    _report_notices(self.conn, config)
 
     def fixed_in_version(self, issue_id):
         """
@@ -970,31 +787,25 @@ class JiraSiteConnection(object):
         # human-facing links (skip/xfail reasons) use the site URL instead.
         self.site_url = (site_url or "").rstrip("/")
         self.is_connected = False
-        # Recorded by check_connection / _jira_request and emitted by a
-        # caller that has a config (see _report_pending_notices), so pytest
-        # capture cannot swallow them.
+        # Recorded by check_connection / _jira_request, drained by a caller
+        # that has a config (see _report_notices): pytest capture would
+        # otherwise swallow them.
         self.probe_forbidden = False
-        # The redacted url of the first request whose 401 got a fresh token:
-        # one slot, because the notice is printed once per connection and a
-        # probe remint must not be replaced by an issue remint.
+        # First request whose 401 got a fresh token; one slot, it is reported
+        # once per connection.
         self.remint_url = None
-        # Set once a freshly minted token was itself rejected: it stores no
-        # exception and replays nothing (unlike auth_dead), later requests
-        # are still sent and raise their own 401. Cleared only by a response
-        # that proves the credential authenticated, so a 5xx or 429 - which
-        # a gateway or WAF returns independently of the credential check -
-        # cannot re-arm the heal and mint once per issue.
+        # A freshly minted token was itself rejected. It replays nothing
+        # (unlike auth_dead) and is cleared only by a response that proves the
+        # credential authenticated, so a 5xx or 429 cannot re-arm the heal and
+        # mint once per issue.
         self.remint_rejected = False
-        self.auth_warned = False
-        self.mint_warned = False
+        # One stderr line per distinct notice for the diagnostics of _report.
+        self.warned = set()
         self.remint_warned = False
-        # Set to the probe's 401 once it survived a freshly minted token:
-        # no retry can heal that, so later attempts *replay* this stored
-        # exception instead of spending 2 token POSTs and 2 gateway calls on
-        # every marked issue. That replay is the opposite of remint_rejected
-        # above, which keeps sending real requests: do not turn this into a
-        # bare flag. Only check_connection sets it: a 401 on a single issue
-        # is not a credential failure (a permission problem there is a 403).
+        # The probe's 401 once it survived a fresh mint: no retry can heal it,
+        # so later attempts *replay* it instead of spending 2 token POSTs and
+        # 2 gateway calls per marked issue (the opposite of remint_rejected:
+        # do not turn this into a bare flag). Only check_connection sets it.
         self.auth_dead = None
 
         self.basic_auth = None
@@ -1005,12 +816,19 @@ class JiraSiteConnection(object):
         ):
             # verify=False *is* the documented opt-in for insecure transport
             # (--jira-no-ssl-verify): it is the only way to allow cleartext.
-            if verify:
-                raise JiraConfigError(CREDENTIALS_NEED_TLS_ERROR)
-            self.warnings.append(
-                "pytest-jira: credentials are sent over plain http because "
-                "--jira-no-ssl-verify is set. Use an https url if you can."
-            )
+            if not verify:
+                self.warnings.append(
+                    "pytest-jira: credentials are sent over plain http "
+                    "because --jira-no-ssl-verify is set. Use an https url "
+                    "if you can."
+                )
+            else:
+                raise JiraConfigError(
+                    "Refusing to send credentials over plain http: use an "
+                    "https url, or pass --jira-no-ssl-verify (or "
+                    "ssl_verification = False) to send them in clear text "
+                    "anyway."
+                )
         if self.mode == AUTH_BASIC:
             self.basic_auth = (username, token or password)
         elif self.mode == AUTH_PAT:
@@ -1021,14 +839,12 @@ class JiraSiteConnection(object):
                 and self.url.lower().startswith("https://")
             ):
                 # Defence in depth: _resolve_auth already builds the gateway
-                # URL from the cloud id, so this cannot fire through the
-                # plugin. It guards direct/library use of this class, where
-                # an Atlassian access token must still never reach another
-                # host.
+                # url, so this only guards direct use of this class, where an
+                # Atlassian access token must never reach another host.
                 raise JiraConfigError(
                     "An OAuth 2.0 service account must talk to "
                     "https://api.atlassian.com/ex/jira/<cloudId>, not %s."
-                    % _redacted(self.url)
+                    % _strip_userinfo(self.url)
                 )
             if not verify:
                 self.warnings.append(
@@ -1044,9 +860,8 @@ class JiraSiteConnection(object):
     def _authorization_headers(self):
         """Return the headers for one request.
 
-        In OAuth mode the access token is minted (and cached) on first use:
-        the client secret is exchanged for a short-lived token and never
-        sent to the API gateway.
+        In OAuth mode the client secret is exchanged for a short-lived access
+        token on first use (and cached): the secret never goes on the wire.
         """
         if not self.oauth_mode:
             return self.headers
@@ -1088,11 +903,10 @@ class JiraSiteConnection(object):
             kwargs["verify"] = self.verify
 
         if self.auth_dead is not None:
-            # Already definitive (see check_connection): replay the
-            # remembered failure so the strategy and the hints behave as
-            # they did the first time, without touching the network again.
-            # with_traceback(None) keeps the object (so .response/.request
-            # stay usable) without growing its traceback on every replay.
+            # Already definitive (see check_connection): replay the remembered
+            # failure without touching the network. with_traceback(None) keeps
+            # the object (.response/.request stay usable) without growing its
+            # traceback on every replay.
             raise self.auth_dead.with_traceback(None)
 
         rsp = self._send(url, method, kwargs)
@@ -1102,15 +916,13 @@ class JiraSiteConnection(object):
             and not self.remint_rejected
         ):
             # A cached access token can be revoked or rotated server side:
-            # drop it and let the retried request mint a fresh one. Say so
-            # once: an unexplained extra mint is a mystery in the logs.
+            # drop it and retry with a fresh one, saying so once.
             _forget_access_token(self.oauth_client_id, self.oauth_client_secret)
             if not self.remint_url:
-                self.remint_url = _redacted(url)
+                self.remint_url = _strip_userinfo(url)
             rsp = self._send(url, method, kwargs)
             if rsp.status_code == 401:
-                # A 401 for a token minted moments ago is deterministic: one
-                # heal, see remint_rejected (which stores/replays nothing).
+                # Deterministic: one heal only, see remint_rejected.
                 self.remint_rejected = True
         if rsp.status_code not in (401, 429) and not (
             500 <= rsp.status_code < 600
@@ -1124,10 +936,9 @@ class JiraSiteConnection(object):
         """Validate authentication and reachability. Does not verify browse
         permissions.
 
-        A 403 from ``/myself`` is not an authentication failure: the token
-        authenticated, it just may not read its own profile (a scoped
-        service account often only has ``read:jira-work``). Only 401 means
-        the credentials are wrong.
+        Only 401 means the credentials are wrong: a 403 from ``/myself`` means
+        the token authenticated but may not read its own profile, which a
+        scoped service account often cannot (``read:jira-work`` alone).
         """
         auth_url = "{url}/rest/api/2/myself".format(url=self.url)
         try:
@@ -1135,20 +946,17 @@ class JiraSiteConnection(object):
         except requests.HTTPError as exc:
             status = getattr(exc.response, "status_code", None)
             if status == 401 and self.oauth_mode and not self.is_connected:
-                # The probe's 401 outlived a fresh mint: the credential is
-                # rejected, and no retry can heal that. Remember it so every
-                # later request replays it instead of minting and probing
-                # again.
+                # The probe's 401 outlived a fresh mint: no retry can heal
+                # that, so remember it (later requests replay it).
                 self.auth_dead = exc
                 raise
-            # Only a service account needs this tolerance (a scoped token
-            # may hold read:jira-work without read:jira-user). A user or
-            # Server/DC connection keeps its previous failure behaviour.
+            # Only a service account tolerates a 403: a user or Server/DC
+            # connection keeps its previous failure behaviour.
             if status != 403 or not self.oauth_mode:
                 raise
-            # Tolerated, but recorded: without read:jira-user the profile
-            # probe is forbidden, and if the account also lacks Browse
-            # projects every issue answers 404 and looks merely "missing".
+            # Tolerated, but recorded: without read:jira-user the profile probe
+            # is forbidden, and if the account also lacks Browse projects every
+            # issue answers 404 and looks merely "missing".
             self.probe_forbidden = True
         self.is_connected = True
         return True
@@ -1493,13 +1301,11 @@ def pytest_unconfigure(config):
 def pytest_configure(config):
     """Register the plugin, resolving the Jira auth mode for this run.
 
-    Always registers the ``jira`` marker. When ``--jira`` is set, resolves
-    the auth mode from the options and their ``PYTEST_JIRA_*`` environment
-    overrides, raises ``pytest.UsageError`` for a configuration that cannot
-    work (no url, or a credential/url combination that Jira would reject),
-    prints the connection warnings it derived to stderr, mounts the retry
-    policy and registers the :class:`JiraHooks` plugin under
-    :data:`PLUGIN_NAME`. Without ``--jira`` nothing is registered.
+    Always registers the ``jira`` marker. With ``--jira`` it resolves the auth
+    mode from the options and their ``PYTEST_JIRA_*`` overrides, raises
+    ``pytest.UsageError`` when no url is configured, prints the derived
+    connection warnings to stderr, mounts the retry policy and registers the
+    :class:`JiraHooks` plugin under :data:`PLUGIN_NAME`.
 
     :param config: configuration object
     """
@@ -1601,17 +1407,15 @@ def _jira_issue_checker(request):
                 return not result  # return boolean representing of issue state
             except (requests.RequestException, JiraOAuthMintError) as e:
                 strategy = request.config.getoption(CONNECTION_ERROR_FLAG_NAME)
-                _handle_connection_error(
-                    e, jira_plugin.conn, strategy, request.config
-                )
+                _report(e, jira_plugin.conn, strategy, request.config)
                 if strategy == SKIP:
                     pytest.skip(
-                        CONNECTION_SKIP_MESSAGE % _request_error_text(e)
+                        CONNECTION_SKIP_MESSAGE % _strip_userinfo(str(e))
                     )
             finally:
                 # A recorded notice must survive a raising issue check (and
                 # the skip/exit the strategy raises).
-                _report_pending_notices(jira_plugin.conn, request.config)
+                _report_notices(jira_plugin.conn, request.config)
 
     return wrapper_jira_issue
 

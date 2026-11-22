@@ -343,16 +343,58 @@ class TestJiraCloudAuth:
             is None
         )
 
-    def test_bare_token_on_cloud_is_rejected(self):
-        """Cloud accepts a user (email+token) or an OAuth service account."""
-        for url in (CLOUD_SITE, CLOUD_GATEWAY):
-            with pytest.raises(plugin.JiraConfigError) as exc:
-                plugin.JiraSiteConnection(url, token="ATATT-token")
-            message = str(exc.value)
-            assert "--jira-user" in message, message
-            assert "--jira-oauth-client-id" in message, message
+    @pytest.mark.parametrize(
+        "url, kwargs, mode",
+        [
+            pytest.param(
+                CLOUD_SITE,
+                {"token": "ATATT-token"},
+                plugin.AUTH_PAT,
+                id="bare-token-on-cloud",
+            ),
+            pytest.param(
+                CLOUD_GATEWAY,
+                {"token": "ATATT-token"},
+                plugin.AUTH_PAT,
+                id="bare-token-on-gateway",
+            ),
+            pytest.param(
+                CLOUD_GATEWAY,
+                {"username": "me@example.com", "token": "api-token"},
+                plugin.AUTH_BASIC,
+                id="gateway-for-a-user",
+            ),
+            pytest.param(
+                CLOUD_SITE,
+                {"username": "me@example.com", "password": "pw"},
+                plugin.AUTH_BASIC,
+                id="cloud-password",
+            ),
+        ],
+    )
+    def test_invalid_url_and_credential_combinations_resolve_as_given(
+        self, url, kwargs, mode
+    ):
+        """These combinations resolve as given, without a pre-flight check."""
+        conn = plugin.JiraSiteConnection(url, **kwargs)
+        assert conn.mode == mode
+        assert conn.url == url
 
-    def test_request_error_text_hides_url_credentials(self):
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "ftp://jira.example.com",
+            "htps://jira.example.com",
+            "jira.example.com",
+            "https://",
+        ],
+    )
+    def test_malformed_urls_are_passed_to_requests(self, url):
+        """A scheme mistake surfaces from requests, not from a check."""
+        conn = plugin.JiraSiteConnection(url, token="pat")
+        assert conn.mode == plugin.AUTH_PAT
+
+    def test_strip_userinfo_hides_url_credentials(self):
         # built rather than written out: a literal credentials-in-URL would
         # be flagged by the repo's secret scanner, which is the point of it
         userinfo = "%s:%s@" % ("svc", "pw-for-test")
@@ -369,21 +411,18 @@ class TestJiraCloudAuth:
         error = plugin.requests.ConnectionError(
             "Max retries exceeded with url: " + url
         )
-        text = plugin._request_error_text(error)
+        text = plugin._strip_userinfo(str(error))
         assert "pw-for-test" not in text, text
         assert userinfo not in text, text
         assert "site.atlassian.net" in text, text
 
-    def test_cloud_host_without_scheme_is_recognized(self):
-        assert plugin._is_cloud_site("example.atlassian.net")
-        assert plugin._is_cloud_or_gateway("api.atlassian.com/ex/jira/x")
-        assert not plugin._is_cloud_or_gateway("jira.example.com")
-
     def test_host_ignores_port_and_userinfo(self):
+        """Scheme-less, port and userinfo must not hide the host."""
         assert plugin._host("https://example.atlassian.net:443") == (
             "example.atlassian.net"
         )
-        assert plugin._is_cloud_or_gateway("https://example.atlassian.net:8443")
+        assert plugin._host("api.atlassian.com") == "api.atlassian.com"
+        assert plugin._is_gateway_url("api.atlassian.com/ex/jira/x")
         assert plugin._is_gateway_url(
             "https://api.atlassian.com:443/ex/jira/abc-123"
         )
@@ -392,18 +431,51 @@ class TestJiraCloudAuth:
             "https://" + userinfo + "example.atlassian.net"
         ) == ("example.atlassian.net")
 
-    def test_redacted_hides_userinfo_but_keeps_the_url(self):
+    def test_strip_userinfo_keeps_the_host_only_for_a_real_authority(self):
+        """Authority userinfo loses its credentials but keeps the host."""
         userinfo = "%s:%s@" % ("user", "pw-for-test")
-        assert plugin._redacted("https://" + userinfo + "host.example/x") == (
-            "https://host.example/x"
-        )
-        assert plugin._redacted(
+        assert plugin._strip_userinfo(
+            "https://" + userinfo + "host.example/x"
+        ) == ("https://host.example/x")
+        assert plugin._strip_userinfo(
             "https://" + userinfo + "host.example:8443/x"
         ) == ("https://host.example:8443/x")
-        # no userinfo: untouched, including an '@' in the path
-        plain = "https://host.example/x@suffix"
-        assert plugin._redacted(plain) == plain
-        assert plugin._redacted("") == ""
+        # An '@' outside the authority cannot be told from a credential, so
+        # the conservative rule redacts the whole run.
+        assert plugin._strip_userinfo("https://host.example/x@suffix") == (
+            "<url>"
+        )
+        # no userinfo at all: untouched
+        assert plugin._strip_userinfo("https://host.example/x") == (
+            "https://host.example/x"
+        )
+        assert plugin._strip_userinfo("") == ""
+
+    def test_no_host_url_survives_to_the_connection_strategy(self, testdir):
+        """An unusable url is a connection error now, not a usage error."""
+        testdir.makepyfile(
+            """
+            import pytest
+
+            @pytest.mark.jira("ORG-1382")
+            def test_pass():
+                assert True
+        """
+        )
+        result = testdir.runpytest(
+            "--jira",
+            "--jira-url",
+            "https://",
+            "--jira-token",
+            "pat",
+            "--jira-connection-error-strategy",
+            "skip",
+            "-rs",
+        )
+        output = result.stdout.str() + result.stderr.str()
+        assert result.ret == 0, output
+        assert "SKIPPED" in output, output
+        assert "INTERNALERROR" not in output, output
 
     def test_clean_keeps_unbalanced_quotes(self):
         """Only a matched pair of quotes is stripped from a value."""
@@ -411,17 +483,65 @@ class TestJiraCloudAuth:
         assert plugin._clean("'abc") == "'abc"
         assert plugin._clean('"from-env"') == "from-env"
 
-    def test_credentials_are_refused_over_plain_http(self):
-        with pytest.raises(plugin.JiraConfigError) as exc:
-            plugin.JiraSiteConnection("http://jira.example.com", token="pat")
-        assert "plain http" in str(exc.value)
-
     def test_plain_http_allowed_when_insecure_transport_is_accepted(self):
         conn = plugin.JiraSiteConnection(
             "http://jira.example.com", token="pat", verify=False
         )
         assert conn.mode == plugin.AUTH_PAT
         assert any("plain http" in w for w in conn.warnings)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"token": "secret-pat-token"},
+            {"username": "me@example.com", "password": "secret-password"},
+        ],
+        ids=["pat", "user-and-password"],
+    )
+    @pytest.mark.parametrize(
+        "verify", [None, True], ids=["default-verify", "explicit-verify"]
+    )
+    def test_plain_http_credentials_are_refused(self, kwargs, verify):
+        """TLS verification is on by default, so cleartext must be explicit."""
+        if verify is not None:
+            kwargs = dict(kwargs, verify=verify)
+        with pytest.raises(plugin.JiraConfigError) as exc:
+            plugin.JiraSiteConnection("http://jira.example.com", **kwargs)
+        message = str(exc.value)
+        assert "https" in message, message
+        assert "--jira-no-ssl-verify" in message, message
+        # the guard must not turn the refusal into a credential leak
+        for secret in (
+            "secret-pat-token",
+            "secret-password",
+            "me@example.com",
+        ):
+            assert secret not in message, message
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"token": "pat"},
+            {"username": "me@example.com", "password": "pw"},
+        ],
+        ids=["pat", "user-and-password"],
+    )
+    def test_plain_http_with_insecure_opt_in_only_warns(self, kwargs):
+        conn = plugin.JiraSiteConnection(
+            "http://jira.example.com", verify=False, **kwargs
+        )
+        assert len(conn.warnings) == 1, conn.warnings
+        assert conn.warnings[0] == (
+            "pytest-jira: credentials are sent over plain http because "
+            "--jira-no-ssl-verify is set. Use an https url if you can."
+        )
+        assert (conn.headers or conn.basic_auth) is not None
+
+    def test_plain_http_without_credentials_is_allowed(self):
+        """Nothing to expose, so plain http is not a credential problem."""
+        conn = plugin.JiraSiteConnection("http://jira.example.com")
+        assert conn.mode is None
+        assert not any("plain http" in w for w in conn.warnings)
 
     def test_oauth_never_uses_unverified_tls(self):
         conn = plugin.JiraSiteConnection(
@@ -574,6 +694,48 @@ class TestJiraCloudAuth:
         conn._jira_request("https://jira.example.com/rest/api/2/myself")
         assert sent.get("timeout") == plugin.JIRA_REQUEST_TIMEOUT, sent
 
+    @pytest.mark.parametrize(
+        "args, message",
+        [
+            pytest.param(
+                (
+                    "--jira-url",
+                    CLOUD_SITE,
+                    "--jira-oauth-client-id",
+                    "cid",
+                    "--jira-oauth-client-secret",
+                    "secret",
+                ),
+                "needs the cloud id",
+                id="oauth-without-a-cloud-id",
+            ),
+            pytest.param(
+                (
+                    "--jira-url",
+                    "http://jira.example.com",
+                    "--jira-token",
+                    "pat",
+                ),
+                "Refusing to send credentials over plain http",
+                id="plain-http-with-a-token",
+            ),
+        ],
+    )
+    def test_pre_flight_refusals_exit_with_a_usage_error(
+        self, testdir, args, message
+    ):
+        """The two surviving refusals must stay usage errors, not skips."""
+        testdir.makepyfile(
+            """
+            def test_pass():
+                assert True
+        """
+        )
+        result = testdir.runpytest("--jira", *args)
+        output = result.stdout.str() + result.stderr.str()
+        assert result.ret == 4, output
+        assert message in output, output
+
     def test_jira_without_a_url_is_a_usage_error(self, testdir):
         testdir.makepyfile(
             """
@@ -585,60 +747,43 @@ class TestJiraCloudAuth:
         assert result.ret == 4, result.stdout.str()
         assert "needs a Jira url" in (result.stdout.str() + result.stderr.str())
 
-    def test_cloud_password_auth_is_a_config_error(self):
-        with pytest.raises(plugin.JiraConfigError) as exc:
-            plugin.JiraSiteConnection(CLOUD_SITE, "me@example.com", "pw")
-        assert "API token" in str(exc.value)
-
     def test_at_sign_in_the_url_path_is_not_a_credential(self):
         """Only an authority userinfo holds credentials, not a path."""
         conn = plugin.JiraSiteConnection("https://site.atlassian.net/x@y")
         assert conn.site_url == "https://site.atlassian.net/x@y"
 
-    def test_credentials_glued_to_the_scheme_are_rejected(self, testdir):
-        """A url whose authority cannot be split is refused, not guessed."""
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            "https:/%s",
+            "//%s",
+            "%s",
+            "https:///%s",
+            "https:////%s",
+            "http//%s",
+            "http///%s",
+        ],
+        ids=[
+            "one-slash",
+            "no-scheme",
+            "no-slashes",
+            "three-slashes",
+            "four-slashes",
+            "missing-scheme-colon",
+            "missing-colon-three-slashes",
+        ],
+    )
+    def test_url_shapes_without_an_authority_do_not_leak(self, testdir, shape):
+        """A url that is barely a url must still not echo its password."""
         # built rather than written out: a literal credentials-in-URL would
         # be flagged by the repo's secret scanner, which is the point of it
         userinfo = "%s:%s@" % ("svc", "pw-for-test")
-        url = urlunparse(("https", userinfo, "/", "", "", ""))
+        url = shape % (userinfo + "jira.invalid")
         testdir.makepyfile(
             """
-            def test_pass():
-                assert True
-        """
-        )
-        result = testdir.runpytest(
-            "--jira", "--jira-url", url, "--jira-token", "pat"
-        )
-        assert result.ret == 4, result.stdout.str()
-        output = result.stdout.str() + result.stderr.str()
-        assert "%40" in output, output
-        assert userinfo not in output, output
+            import pytest
 
-    def test_unsupported_scheme_names_the_scheme(self, testdir):
-        """A non-http(s) scheme is named, not reported as missing."""
-        testdir.makepyfile(
-            """
-            def test_pass():
-                assert True
-        """
-        )
-        for url, scheme in (
-            ("ftp://jira.example.com", "ftp"),
-            ("htps://jira.example.com", "htps"),
-        ):
-            result = testdir.runpytest(
-                "--jira", "--jira-url", url, "--jira-token", "pat"
-            )
-            assert result.ret == 4, result.stdout.str()
-            output = result.stdout.str() + result.stderr.str()
-            assert "scheme is %s" % scheme in output, output
-            assert "its scheme is none" not in output, output
-
-    def test_url_without_a_scheme_is_a_usage_error(self, testdir):
-        """A missing scheme is a different mistake than glued credentials."""
-        testdir.makepyfile(
-            """
+            @pytest.mark.jira("ORG-1382")
             def test_pass():
                 assert True
         """
@@ -646,27 +791,128 @@ class TestJiraCloudAuth:
         result = testdir.runpytest(
             "--jira",
             "--jira-url",
-            "jira.example.com",
+            url,
             "--jira-token",
-            "pat",
+            "tok",
+            "-rs",
+            "--jira-connection-error-strategy=skip",
         )
-        assert result.ret == 4, result.stdout.str()
         output = result.stdout.str() + result.stderr.str()
-        assert "must start with http" in output, output
-        assert "glued to the scheme" not in output, output
+        assert "SKIPPED" in output, output
+        assert "pw-for-test" not in output, output
+        assert userinfo not in output, output
+        assert "INTERNALERROR" not in output, output
+
+    def test_a_nested_url_run_does_not_leak_its_password(self, testdir):
+        """A second, credentialed url inside the run is not a separate case."""
+        # built rather than written out: a literal credentials-in-URL would
+        # be flagged by the repo's secret scanner, which is the point of it
+        password = "PW"
+        url = "https:/a@b/https:/u:%s@h" % password
+        testdir.makepyfile(
+            """
+            import pytest
+
+            @pytest.mark.jira("ORG-1382")
+            def test_pass():
+                assert True
+        """
+        )
+        result = testdir.runpytest(
+            "--jira",
+            "--jira-url",
+            url,
+            "--jira-token",
+            "tok",
+            "-rs",
+            "--jira-connection-error-strategy=skip",
+        )
+        output = result.stdout.str() + result.stderr.str()
+        assert "SKIPPED" in output, output
+        assert "<url>" in output, output
+        assert password not in output, output
+        assert "u:%s@" % password not in output, output
+        assert "INTERNALERROR" not in output, output
+
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            "https:/%s",
+            "//%s",
+            "%s",
+            "https:///%s",
+            "https:////%s",
+            "http//%s",
+            "http///%s",
+        ],
+        ids=[
+            "one-slash",
+            "no-scheme",
+            "no-slashes",
+            "three-slashes",
+            "four-slashes",
+            "missing-scheme-colon",
+            "missing-colon-three-slashes",
+        ],
+    )
+    def test_strict_traceback_does_not_leak_a_url_password(
+        self, testdir, shape
+    ):
+        """The redaction boundary covers the re-raised traceback too."""
+        # built rather than written out: a literal credentials-in-URL would
+        # be flagged by the repo's secret scanner, which is the point of it
+        userinfo = "%s:%s@" % ("svc", "pw-for-test")
+        url = shape % (userinfo + "jira.invalid")
+        testdir.makepyfile(
+            """
+            import pytest
+
+            @pytest.mark.jira("ORG-1382")
+            def test_pass():
+                assert True
+        """
+        )
+        result = testdir.runpytest(
+            "--jira",
+            "--jira-url",
+            url,
+            "--jira-token",
+            "tok",
+            "--jira-connection-error-strategy",
+            "strict",
+        )
+        output = result.stdout.str() + result.stderr.str()
+        assert "pw-for-test" not in output, output
+        assert userinfo not in output, output
+
+    def test_unescaped_at_in_a_password_does_not_mangle_the_url(self):
+        """The last '@' before the path holds the credentials, not the host."""
+        # built rather than written out: see the secret scanner note above
+        userinfo = "%s:%s@" % ("user", "p@ss")
+        url = "https://" + userinfo + "host.example/x"
+        conn = plugin.JiraSiteConnection(url)
+        assert conn.basic_auth == ("user", "p@ss"), conn.basic_auth
+        assert conn.url == "https://host.example/x", conn.url
+        masked = plugin._strip_userinfo("request failed for %s" % url)
+        assert masked == "request failed for https://host.example/x", masked
+        for warning in conn.warnings:
+            assert "p@ss" not in warning, warning
+
+    def test_userinfo_without_a_host_is_still_lifted_out(self):
+        """A malformed authority is no longer refused, but its credentials
+        are still lifted, so they cannot reach conn.url or a message."""
+        # built rather than written out: a literal credentials-in-URL would
+        # be flagged by the repo's secret scanner, which is the point of it
+        userinfo = "%s:%s@" % ("svc", "pw-for-test")
+        url = urlunparse(("https", userinfo, "/", "", "", ""))
+        conn = plugin.JiraSiteConnection(url)
+        assert conn.basic_auth == ("svc", "pw-for-test")
+        assert userinfo not in conn.url
 
     def test_ipv6_userinfo_keeps_brackets(self):
         userinfo = "%s:%s@" % ("svc", "pw-for-test")
         conn = plugin.JiraSiteConnection("https://" + userinfo + "[::1]:8443/x")
         assert conn.url == "https://[::1]:8443/x", conn.url
-
-    def test_token_with_cloud_id_on_a_server_host_is_rejected(self):
-        """A cloud id marks the site as Cloud, where a bare token is invalid."""
-        with pytest.raises(plugin.JiraConfigError) as exc:
-            plugin.JiraSiteConnection(
-                "https://jira.custom.example", token="tok", cloud_id="abc"
-            )
-        assert "token on its own means nothing" in str(exc.value)
 
     def test_oauth_hint_on_the_gateway(self):
         """Behind the gateway only the OAuth credential can be wrong."""
@@ -677,7 +923,7 @@ class TestJiraCloudAuth:
             cloud_id="abc-123",
         )
         error = _http_error(401)
-        hint = plugin._auth_hint(error, conn)
+        hint = plugin._hint(error, conn)
         assert "PYTEST_JIRA_OAUTH_CLIENT_ID" in hint, hint
         assert "Browse projects" in hint, hint
 
@@ -701,7 +947,7 @@ class TestJiraCloudAuth:
         result = _run_oauth_pytest(testdir)
         assert result.ret == 4, result.ret
 
-    def test_warn_on_auth_error_is_visible_for_a_skipped_fixture_test(
+    def test_report_hint_survives_capture_for_a_skipped_fixture_test(
         self, testdir, monkeypatch
     ):
         """The hint must survive pytest's capture for a green skip."""
@@ -723,7 +969,7 @@ class TestJiraCloudAuth:
         assert result.ret == 0, result.stdout.str()
         assert "Jira rejected" in result.stderr.str(), result.stderr.str()
 
-    def test_warn_on_auth_error_is_visible_for_a_skipped_marker_test(
+    def test_report_hint_survives_capture_for_a_skipped_marker_test(
         self, testdir, monkeypatch
     ):
         """The collection-path hint must reach stderr too."""
@@ -1123,12 +1369,8 @@ class TestJiraCloudAuth:
         assert result.ret == 0, result.stdout.str()
         assert "cloud_id only applies" in result.stderr.str()
 
-    def test_cloud_id_with_a_pat_is_rejected_on_a_server_url(self, testdir):
-        """A cloud id says "Jira Cloud", where a bare token means nothing.
-
-        A custom-domain Cloud site would otherwise accept the token as a
-        Server/DC PAT Bearer and fail later with an opaque 401.
-        """
+    def test_cloud_id_with_a_pat_warns_on_a_server_url(self, testdir):
+        """A cloud id next to a PAT is inert: warn, do not abort."""
         testdir.makepyfile(
             """
             def test_pass():
@@ -1144,10 +1386,8 @@ class TestJiraCloudAuth:
             "--jira-cloud-id",
             "abc-123",
         )
-        assert result.ret == 4, result.stdout.str()
-        output = result.stdout.str() + result.stderr.str()
-        assert plugin.CLOUD_CREDENTIALS_ERROR in output, output
-        assert "cloud_id only applies" not in output, output
+        assert result.ret == 0, result.stdout.str()
+        assert "cloud_id only applies" in result.stderr.str()
 
     def test_cloud_id_without_credentials_warns_on_a_server_url(self, testdir):
         """With nothing to authenticate, the cloud id is inert: just warn."""
@@ -1206,6 +1446,34 @@ class TestJiraCloudAuth:
         assert "/browse/" not in output, output
         assert "XFAIL" in output, output
         assert "ORG-1382" in output, output
+
+    def test_redacted_site_url_reason_is_the_bare_issue_id(
+        self, testdir, monkeypatch
+    ):
+        """A site url that redacts to <url> is not a link either."""
+        monkeypatch.setattr(
+            plugin.JiraHooks, "is_issue_resolved", lambda self, issue_id: False
+        )
+        testdir.makepyfile(
+            """
+            import pytest
+
+            @pytest.mark.jira("ORG-1382", run=True)
+            def test_pass():
+                assert False
+        """
+        )
+        result = _run_oauth_pytest(
+            testdir,
+            "-rx",
+            "--jira-connection-error-strategy",
+            "skip",
+            url="https://host.example/?email=me@example.com",
+        )
+        assert result.ret == 0, result.stdout.str()
+        output = result.stdout.str()
+        assert "ORG-1382" in output, output
+        assert "<url>/browse" not in output, output
 
     def test_unused_cloud_id_warning(self):
         # a user ignores the cloud id, and says so
@@ -1804,20 +2072,21 @@ class TestOAuthServiceAccount:
 
     The mint/Bearer mechanics live in :class:`TestServiceAccountToken`.
     What is pinned here is the configuration side: mode resolution, the
-    gateway and host rules, usage errors, env/ini resolution and the
-    wording of the hints a failed connection prints.
+    gateway and host rules, the remaining cloud-id usage error, env/ini
+    resolution and the wording of the hints a failed connection prints.
     """
 
-    def test_oauth_mode_needs_both_halves_of_the_credential(self):
+    def test_oauth_mode_warns_on_half_a_credential(self):
+        """A leftover half pair is ignored, not a usage error."""
         for kwargs in (
             {"oauth_client_id": "cid"},
             {"oauth_client_secret": "sec"},
         ):
-            with pytest.raises(plugin.JiraConfigError) as exc:
-                plugin.JiraSiteConnection(
-                    CLOUD_SITE, cloud_id="abc-123", **kwargs
-                )
-            assert "incomplete" in str(exc.value)
+            conn = plugin.JiraSiteConnection(
+                CLOUD_SITE, cloud_id="abc-123", **kwargs
+            )
+            assert conn.mode is None
+            assert any("incomplete" in w for w in conn.warnings), conn.warnings
 
     def test_oauth_mode_needs_a_cloud_id(self):
         with pytest.raises(plugin.JiraConfigError) as exc:
@@ -1920,64 +2189,6 @@ class TestOAuthServiceAccount:
         assert "Could not authenticate" in output, output
         assert "Check --jira-url and --jira-cloud-id" in output, output
 
-    def test_bare_cloud_token_is_a_usage_error_at_session_level(self, testdir):
-        """The user-facing path: configure -> UsageError -> exit 4."""
-        testdir.makepyfile(
-            """
-        def test_pass():
-            assert True
-    """
-        )
-        result = testdir.runpytest(
-            "--jira", "--jira-url", CLOUD_SITE, "--jira-token", "ATATT-token"
-        )
-        assert result.ret == 4, result.stdout.str()
-        output = result.stdout.str() + result.stderr.str()
-        assert "token on its own means nothing" in output, output
-        # both supported ways are named
-        assert "--jira-user" in output, output
-        assert "--jira-oauth-client-id" in output, output
-        assert "INTERNALERROR" not in output, output
-
-    def test_url_without_a_host_is_a_usage_error(self, testdir):
-        """No host means no request, so fail as a usage error, not a crash."""
-        testdir.makepyfile(
-            """
-        def test_pass():
-            assert True
-    """
-        )
-        result = testdir.runpytest("--jira", "--jira-url", "https://")
-        assert result.ret == 4, result.stdout.str()
-        output = result.stdout.str() + result.stderr.str()
-        assert plugin.URL_WITHOUT_HOST_ERROR in output, output
-        assert "INTERNALERROR" not in output, output
-
-    def test_gateway_url_with_a_user_is_a_usage_error(self, testdir):
-        """Only an OAuth service account may talk to the API gateway."""
-        testdir.makepyfile(
-            """
-        def test_pass():
-            assert True
-    """
-        )
-        result = testdir.runpytest(
-            "--jira",
-            "--jira-url",
-            CLOUD_GATEWAY,
-            "--jira-user",
-            "me@example.com",
-            "--jira-token",
-            "api-token",
-        )
-        assert result.ret == 4, result.stdout.str()
-        output = result.stdout.str() + result.stderr.str()
-        assert plugin.GATEWAY_NEEDS_OAUTH_ERROR in output, output
-        # a Server/DC PAT is no better: the gateway needs an OAuth token
-        with pytest.raises(plugin.JiraConfigError) as exc:
-            plugin.JiraSiteConnection(CLOUD_GATEWAY, token="pat")
-        assert plugin.CLOUD_CREDENTIALS_ERROR in str(exc.value)
-
     def test_oauth_configured_through_jira_cfg(self, testdir):
         """The ini keys work too, not only env vars and CLI options."""
         testdir.makefile(
@@ -2015,10 +2226,9 @@ class TestOAuthServiceAccount:
         assert plugin._is_gateway_url(
             "https://api.atlassian.com/ex/jira/abc-123"
         )
-        assert plugin._is_cloud_or_gateway(
-            "https://api.atlassian.com/ex/jira/abc-123"
+        assert plugin._is_gateway_url(
+            "https://api.atlassian.com:443/ex/jira/abc-123"
         )
-        assert not plugin._is_cloud_or_gateway("https://api.atlassian.com")
 
     def test_token_next_to_oauth_is_ignored_with_a_warning(self):
         conn = plugin.JiraSiteConnection(
@@ -2042,7 +2252,7 @@ class TestOAuthServiceAccount:
         assert conn.mode == plugin.AUTH_BASIC
         assert any("incomplete" in w for w in conn.warnings)
 
-    def test_warn_on_auth_error_prints_once(self, capsys):
+    def test_report_prints_the_hint_once(self, capsys):
         """The OAuth hint is printed once per connection, not per test."""
         conn = plugin.JiraSiteConnection(
             CLOUD_SITE,
@@ -2051,9 +2261,29 @@ class TestOAuthServiceAccount:
             cloud_id="abc-123",
         )
         error = _http_error(401)
-        plugin._warn_on_auth_error(error, conn)
-        plugin._warn_on_auth_error(error, conn)
+        plugin._report(error, conn, plugin.SKIP)
+        plugin._report(error, conn, plugin.SKIP)
         stderr = capsys.readouterr().err
+        assert stderr.count("Jira rejected") == 1, stderr
+
+    def test_report_prints_a_mint_error_and_an_auth_hint_both(self, capsys):
+        """Distinct notices are not each other's once-guard."""
+        conn = plugin.JiraSiteConnection(
+            CLOUD_SITE,
+            oauth_client_id="cid",
+            oauth_client_secret="sec",
+            cloud_id="abc-123",
+        )
+        mint = JiraOAuthMintError(
+            "Could not mint an Atlassian access token from the OAuth 2.0 "
+            "credential (HTTP 401)."
+        )
+        plugin._report(mint, conn, plugin.SKIP)
+        plugin._report(_http_error(401), conn, plugin.SKIP)
+        plugin._report(mint, conn, plugin.SKIP)
+        plugin._report(_http_error(401), conn, plugin.SKIP)
+        stderr = capsys.readouterr().err
+        assert stderr.count("Could not mint an Atlassian access token") == 1
         assert stderr.count("Jira rejected") == 1, stderr
 
     def test_strict_issue_500_redacts_and_keeps_the_response(
@@ -2062,7 +2292,7 @@ class TestOAuthServiceAccount:
         """A failure with no hint still goes through the redaction boundary.
 
         Probe 200 plus a non-401 issue error is the only path that reaches
-        ``exc.args = (_request_error_text(exc),)`` and the bare raise: the
+        ``exc.args = (_strip_userinfo(str(exc)),)`` and the bare raise: the
         hint is None, so nothing exits. The rewritten message must not leak
         the url userinfo, and ``.response`` must survive for a classifier.
         """
@@ -2091,7 +2321,7 @@ class TestOAuthServiceAccount:
             return Response(500, leaked)
 
         raised = []
-        boundary = plugin._handle_connection_error
+        boundary = plugin._report
 
         def spy(exc, conn, strategy, config=None):
             try:
@@ -2106,7 +2336,7 @@ class TestOAuthServiceAccount:
             "_authorization_headers",
             lambda self: {"Authorization": "Bearer tok"},
         )
-        monkeypatch.setattr(plugin, "_handle_connection_error", spy)
+        monkeypatch.setattr(plugin, "_report", spy)
         testdir.makepyfile(
             """
             import pytest
@@ -2168,10 +2398,51 @@ class TestOAuthServiceAccount:
         assert conn.mode == plugin.AUTH_PAT
         assert any("incomplete" in w for w in conn.warnings)
 
-    def test_redacted_survives_a_malformed_port(self):
-        assert plugin._redacted("https://user:pw@host.example:notaport/x") == (
-            "https://host.example/x"
+    def test_strip_userinfo_survives_a_malformed_port(self):
+        assert plugin._strip_userinfo(
+            "https://user:pw@host.example:notaport/x"
+        ) == ("https://host.example:notaport/x")
+
+    def test_strip_userinfo_survives_extra_slashes(self):
+        """Three or more slashes still delimit an authority."""
+        for url in ("https:///svc:pw@host", "https:////svc:pw@host"):
+            masked = plugin._strip_userinfo(url)
+            assert "host" in masked, masked
+            assert "pw" not in masked, masked
+        # an '@' outside the authority redacts the whole run; a raw port is
+        # kept as is
+        assert plugin._strip_userinfo("https://host/x@y") == "<url>"
+        assert plugin._strip_userinfo("https://host:notaport/x") == (
+            "https://host:notaport/x"
         )
+
+    def test_strip_userinfo_without_a_scheme_colon(self):
+        """A missing scheme colon leaves the run unanchored, so no authority
+        is found and the whole run is redacted rather than guessed at."""
+        for url in ("http//svc:pw@host", "http///svc:pw@host"):
+            masked = plugin._strip_userinfo(url)
+            assert masked == "<url>", masked
+            assert "pw" not in masked, masked
+        assert plugin._strip_userinfo("https://host/x@y") == "<url>"
+
+    def test_a_raw_slash_in_a_password_redacts_the_whole_run(self):
+        """A raw '/' in a password is ambiguous (it also starts the path), so
+        the run is not parsed as an authority and is replaced as a whole."""
+        password = "pw"
+        url = "https://u:%s/x@h" % password
+        masked = plugin._strip_userinfo(url)
+        assert masked == "<url>", masked
+        assert password not in masked, masked
+
+    def test_a_nested_url_run_is_redacted_as_a_whole(self):
+        """The shape that motivated the rule: a second, credentialed url
+        hides inside the first run, so no part of it can be kept."""
+        password = "PW"
+        nested = "https:/a@b/https:/u:%s@h" % password
+        masked = plugin._strip_userinfo("request failed for %s" % nested)
+        assert masked == "request failed for <url>", masked
+        assert password not in masked, masked
+        assert "u:%s@" % password not in masked, masked
 
     def test_oauth_hint_names_the_client_credentials(self):
         fake_secret = "not-a-real-credential"
@@ -2182,7 +2453,7 @@ class TestOAuthServiceAccount:
             cloud_id="abc-123",
         )
         error = _http_error(401)
-        hint = plugin._auth_hint(error, conn)
+        hint = plugin._hint(error, conn)
         assert "PYTEST_JIRA_OAUTH_CLIENT_ID" in hint, hint
         # the secret VALUE must never be echoed, only the flag name
         assert fake_secret not in hint, hint

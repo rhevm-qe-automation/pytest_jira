@@ -208,17 +208,20 @@ Usage
      username =
      password =
      token =
-     # cloud_id marks the url as Jira Cloud, where a bare token is not a valid
-     # credential (exit 4). A Server/Data Center setup with a personal access
-     # token must leave it empty; it is required for the OAuth service account.
+     # cloud_id is only used by the OAuth 2.0 service account, where it is
+     # required: the gateway URL is derived from it. With a user, a bare token
+     # or no credentials at all it is ignored (a warning says so).
      cloud_id =
      oauth_client_id =
      oauth_client_secret =
      # oauth_client_secret is a long-lived credential: keep this file readable by
      # you only (`chmod 600 jira.cfg`) and prefer PYTEST_JIRA_OAUTH_CLIENT_SECRET,
      # which leaves nothing on disk.
-     # ssl_verification = True/False  (False also allows a plain http url;
-     #                                ignored for an OAuth service account)
+     # ssl_verification = True/False  (True, the default, refuses credentials
+     #                                over plain http; False disables TLS
+     #                                verification and allows a plain http
+     #                                url with a warning; ignored for an OAuth
+     #                                service account)
      # version = foo-1.0
      # components = com1,second component,com3
      # marker_strategy = [open|strict|warn|ignore] (not found issues)
@@ -271,14 +274,11 @@ Authentication (Jira Cloud and Server/DC)
 
    Breaking changes for existing setups:
 
-   * credentials are refused over plain ``http://`` (use ``https``, or
-     ``--jira-no-ssl-verify`` to opt into insecure transport);
+   * a ``http://`` url with credentials is now refused instead of silently
+     sending them in clear text (use ``https``, or ``--jira-no-ssl-verify``
+     to opt into insecure transport);
    * ``--jira`` without a configured ``url`` is now a usage error instead of
      running every test without issue checks;
-   * a bare token on a ``.atlassian.net`` url, or next to a ``cloud_id``,
-     now aborts with exit code 4 instead of failing each marked test at
-     request time (a Cloud token needs a username or an OAuth 2.0
-     credential);
    * a ``404`` from the authentication probe is no longer mistaken for a
      missing issue: it raises under ``error_strategy=strict`` (the default)
      and skips under ``skip``. It used to be answered by the marker strategy,
@@ -304,12 +304,15 @@ Server/Data Center personal access token:
      - ``url`` + ``token`` (personal access token)
      - Bearer to the URL as configured
 
-A **token on its own is not a valid Jira Cloud configuration** and the plugin
-stops with an explanation instead of sending it: a Cloud token belongs either
-to a user (then it needs the email as the username) or to a service account
-(then it needs the OAuth 2.0 credential). A ``cloud_id`` marks the ``url``
-as Jira Cloud, so this holds on any host, not only on a ``.atlassian.net``
-url.
+A bare ``token`` is sent as a Bearer token to the ``url`` as configured, with
+no username and no cloud id: that is the Server/Data Center personal access
+token. It is **not a valid Jira Cloud credential** - a Cloud token belongs
+either to a user (then it needs the email as the username) or to a service
+account (then it needs the OAuth 2.0 credential) - but the plugin does not
+refuse the combination up front. Jira answers ``401`` on the first request and
+``--jira-connection-error-strategy`` handles it like any other connection
+failure. A ``cloud_id`` does not change that: with no OAuth 2.0 credential it
+is ignored, on any host.
 
 User (Jira Cloud)
 -----------------
@@ -380,14 +383,15 @@ Notes:
 
 * Do not set a username or a token: the minted access token is sent as a
   Bearer token. A lone stray ``username`` or ``token`` is ignored with a
-  warning, and an OAuth pair with a missing half is a usage error (exit code
-  4) when nothing else can authenticate. The two lists under *Failure
-  behaviour* enumerate every combination and its outcome.
-* ``cloud_id`` is always required: the plugin derives the gateway from it.
-  ``url`` stays the site URL and is only used for browse links
-  (``https://<site>.atlassian.net/browse/<issue>``); pointing ``url`` at
-  ``https://api.atlassian.com/ex/jira/<cloudId>`` is accepted but then the
-  skip/xfail reasons cannot link to an issue page (a warning says so).
+  warning, and an OAuth pair with a missing half is ignored with a warning
+  too - it is never fatal. *Failure behaviour* lists every combination and
+  its outcome.
+* ``cloud_id`` is required together with the OAuth 2.0 credential: the plugin
+  derives the gateway from it. ``url`` stays the site URL and is only used
+  for browse links (``https://<site>.atlassian.net/browse/<issue>``);
+  pointing ``url`` at ``https://api.atlassian.com/ex/jira/<cloudId>`` is
+  accepted but then the skip/xfail reasons cannot link to an issue page (a
+  warning says so).
 * ``--jira-no-ssl-verify`` is ignored for a service account: its access
   token is only ever sent over verified TLS (a warning says so).
 * A failed mint stops the run with the HTTP status and which value to check
@@ -414,51 +418,86 @@ Jira Server/Data Center
 A Bearer token is used as configured; no cloud id, no OAuth credential.
 Server/Data Center also accepts ``username`` + ``password``
 (``--jira-user`` / ``--jira-password``) for basic auth. Jira Cloud has
-rejected password basic auth since 2019: use an API token.
+rejected password basic auth since 2019, so the combination is sent as given
+and Jira answers ``401``: use an API token.
 
 Failure behaviour
 -----------------
 
-A configuration the plugin cannot use aborts the run with exit code 4
-(``USAGE_ERROR``) and one clear message instead of a traceback:
+Three configurations are rejected before any request is made. They end the
+run with exit code 4 (``USAGE_ERROR``) and one message instead of a
+traceback:
 
-* a bare token on a Jira Cloud host (site URL or API gateway), or a bare
-  token next to a ``cloud_id`` on any host - a ``cloud_id`` marks the url as
-  Jira Cloud, where a bare token is not a valid credential,
-* an OAuth credential with a missing half and no other usable credential, or
-  an OAuth credential without a ``cloud_id``,
-* ``username`` + ``password`` on Jira Cloud (it only accepts API tokens),
-* a ``url`` that carries credentials over plain ``http://``,
-* a ``url`` with no ``http://``/``https://`` scheme (``jira.example.com``)
-  or with any other scheme, since it cannot be sent as given,
-* a ``url`` with no host at all (``https://`` on its own),
-* the API gateway as ``url`` for a user or a Server/DC token,
-* ``--jira`` without any ``url``,
-* a minted access token rejected by the API gateway.
+* ``--jira`` without any ``url`` (``--jira-url``, ``PYTEST_JIRA_URL`` or
+  ``url`` in ``jira.cfg``) - without it no issue check can run,
+* an OAuth 2.0 service account without a ``cloud_id``: the gateway
+  ``https://api.atlassian.com/ex/jira/<cloudId>`` cannot be derived, so there
+  is nothing to talk to,
+* credentials (a token, or a username with a password) on a plain ``http://``
+  url: they would be sent in clear text, so the plugin refuses to send them
+  unless TLS verification is disabled.
 
-For an OAuth service account, credentials rejected by the authentication
-probe (``/rest/api/2/myself``) also end the run this way under the default
-``error_strategy=strict``. With ``skip`` the marked tests are skipped with
-the connection message, with ``ignore`` no skip is added and they run; the
-hint is printed once on stderr either way. A 403 from that probe still
-counts as authenticated (a scoped service account may only hold
+Every other combination is taken as configured and only fails when the first
+request is made - the same ``requests`` error or Jira status a misconfigured
+setup always produced. Nothing else is checked up front about the host, how
+the credentials are paired, or whether they match the host, so a url
+without a scheme (``jira.example.com``), a url with no host (``https://`` on
+its own), ``username`` + ``password`` on Jira Cloud, a bare token on a Jira
+Cloud host or next to a ``cloud_id``, and the API gateway as ``url`` for a
+user or a Server/DC token are all sent exactly as given. A url that cannot be
+sent at all surfaces as a ``requests`` error (``MissingSchema``,
+``InvalidURL``, ``InvalidSchema``), a credential Jira does not accept as an
+HTTP error from Jira (usually ``401``).
+
+What a failed request does is decided by
+``--jira-connection-error-strategy``:
+
+* ``strict`` (default) - the error is raised, so the run stops at the first
+  marked issue,
+* ``skip`` - the marked tests are skipped with the connection message,
+* ``ignore`` - no skip is added and the marked tests run.
+
+An OAuth 2.0 service account adds fail-fast diagnostics on top, so that a
+credential that cannot work does not degrade into a run where every marked
+test skips:
+
+* a mint failure ends the run with exit code 4 under ``strict``: with the HTTP
+  status and which value to check when the token endpoint answers, with the
+  transport error and no status when it cannot be reached at all,
+* credentials rejected by Jira - a ``401`` that carries a response - end the
+  run with exit code 4 and the auth hint under ``strict``. This covers the
+  authentication probe (``/rest/api/2/myself``) and a ``401`` on a single
+  issue later in the run.
+
+With ``skip`` the marked tests are skipped with the connection message, with
+``ignore`` no skip is added and they run; the hint is printed once on stderr
+either way. A transport failure with no response is not a usage error, not
+even under ``strict``: it is warned and then raised. A 403 from that probe
+still counts as authenticated (a scoped service account may only hold
 ``read:jira-work``); only 401 means wrong credentials.
 
 A user or Server/DC connection keeps its previous behaviour: a failed
 request raises under ``strict`` and skips under ``skip``, with no extra
 diagnostics.
 
-Several combinations are answerable rather than fatal, and are reported on
-stderr: an OAuth credential ignored because a username with a token/password
-is set, a token/username/password ignored because an OAuth credential is
-set, a password without a username, a half OAuth credential next to a
-*usable* credential (a ``username`` with a ``token`` or ``password``, or a
-bare ``token``) - a lone ``username`` plus half a pair still exits 4 - an
-ignored ``cloud_id`` (next to a username with a token or a
-password, and with no credentials at all), a gateway ``url`` that cannot
-produce browsable links, credentials embedded in the ``url`` (lifted into
-basic auth), plain ``http`` allowed because ``--jira-no-ssl-verify`` is set,
-and that flag being ignored for a service account.
+Several combinations are answerable rather than fatal, and are reported once
+on stderr:
+
+* an OAuth credential ignored because a username with a token or a password
+  is set,
+* a token, username or password ignored because an OAuth credential is set,
+* a password without a username,
+* an incomplete OAuth credential (a client id without its secret, or the
+  other way round): it is ignored, so a leftover variable cannot break a
+  working user, PAT or anonymous setup,
+* a ``cloud_id`` with no OAuth credential (next to a username with a token or
+  a password, next to a bare token, and with no credentials at all),
+* a gateway ``url`` on an OAuth 2.0 service account, which cannot produce
+  browsable skip/xfail links (a user or Server/DC connection gets no warning:
+  its ``url`` is used as given),
+* credentials embedded in the ``url`` (lifted into basic auth),
+* credentials sent over plain ``http`` while ``--jira-no-ssl-verify`` is set,
+* ``--jira-no-ssl-verify`` being ignored for a service account.
 
 Errors on individual issues are split by status once the connection itself
 succeeded: a ``404`` means the issue is not visible, so it is answered by
@@ -494,15 +533,19 @@ Common notes
   ``429``/``503`` carrying a long ``Retry-After`` can hold an attempt longer: a
   stall surfaces as a ``Read timed out`` failure instead of hanging the run.
 * Keep credentials out of the ``url``. If you embed them, the plugin lifts
-  them into basic auth and warns. A ``url`` whose credentials are glued to the
-  scheme - an ``@`` with no host behind it, ``https://user:pw@/`` - aborts with
-  exit code 4 and the hint that a literal ``@`` in the password must be
-  percent-encoded as ``%40``. Prefer ``username``/``token`` (or the
-  environment variables).
-* Credentials are refused over plain ``http://``. ``--jira-no-ssl-verify``
-  is the escape hatch: it allows a plain ``http`` url (with a warning), and
-  it disables TLS verification for the Jira requests. For an OAuth service
-  account it is ignored - the access token is only sent over verified TLS.
+  them into basic auth and warns. Credentials glued to the scheme - an ``@``
+  with no host behind it, ``https://user:pw@/`` - leave a url that cannot be
+  sent, so the first request fails with a ``requests`` error, handled by
+  ``--jira-connection-error-strategy``. A literal ``@`` in an embedded
+  password must be percent-encoded as ``%40``. Prefer ``username``/``token``
+  (or the environment variables).
+* Credentials are refused over plain ``http://``: a token, or a username
+  with a password, would be sent in clear text. ``--jira-no-ssl-verify``
+  (or ``ssl_verification = False``) is the explicit escape hatch: it allows
+  a plain ``http`` url with a warning, and it disables TLS verification for
+  the Jira requests. A plain ``http`` url without credentials is used as
+  given. For an OAuth service account the flag is ignored - the access token
+  is only sent over verified TLS.
 * Running the plugin's own test suite: set either ``TEST_JIRA_USER`` and
   ``TEST_JIRA_TOKEN`` (user), or ``TEST_JIRA_OAUTH_CLIENT_ID``,
   ``TEST_JIRA_OAUTH_CLIENT_SECRET`` and ``TEST_JIRA_CLOUD_ID`` (service

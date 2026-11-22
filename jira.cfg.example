@@ -21,12 +21,15 @@
 #   * a service account: `url` + `cloud_id` + `oauth_client_id` +
 #     `oauth_client_secret` (the plugin mints a short-lived access token
 #     and sends it to the API gateway)
-# A bare token is not enough on Jira Cloud: it means nothing without either
-# a username (user) or the OAuth 2.0 credential (service account), and the
-# plugin stops with an explanation instead of sending it. On Jira
-# Server/Data Center a token alone is a personal access token and stays
-# valid. Service accounts also need product access to Jira and "Browse
-# projects", or Jira answers 404 and issues look missing.
+# A bare token is sent as given, and Jira answers 401 on the first request
+# when the host is Jira Cloud: a Cloud token belongs either to a user (then
+# it needs the email as the username) or to a service account (then it
+# needs the OAuth 2.0 credential). The plugin does not refuse the
+# combination up front: --jira-connection-error-strategy handles that 401
+# like any other connection failure. On Jira Server/Data Center a token
+# alone is a personal access token and stays valid. Service accounts also
+# need product access to Jira and "Browse projects", or Jira answers 404
+# and issues look missing.
 
 [DEFAULT]
 url = https://jira.atlassian.com
@@ -34,17 +37,20 @@ url = https://jira.atlassian.com
 username =
 password =
 token =
-# cloud_id marks the url as Jira Cloud, where a bare token is not a valid
-# credential (exit 4). A Server/Data Center setup with a personal access
-# token must leave it empty; it is required for the OAuth service account.
+# cloud_id is only used by the OAuth 2.0 service account, where it is
+# required: the gateway URL is derived from it. With a user, a bare token
+# or no credentials at all it is ignored (a warning says so).
 cloud_id =
 oauth_client_id =
 oauth_client_secret =
 # oauth_client_secret is a long-lived credential: keep this file readable by
 # you only (`chmod 600 jira.cfg`) and prefer PYTEST_JIRA_OAUTH_CLIENT_SECRET,
 # which leaves nothing on disk.
-# ssl_verification = True/False  (False also allows a plain http url;
-#                                ignored for an OAuth service account)
+# ssl_verification = True/False  (True, the default, refuses credentials
+#                                over plain http; False disables TLS
+#                                verification and allows a plain http
+#                                url with a warning; ignored for an OAuth
+#                                service account)
 # version = foo-1.0
 # components = com1,second component,com3
 # marker_strategy = [open|strict|warn|ignore] (not found issues)
