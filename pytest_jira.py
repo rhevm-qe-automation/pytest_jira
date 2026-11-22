@@ -36,16 +36,7 @@ CONNECTION_SKIP_MESSAGE = "Jira connection issue, skipping test: %s"
 CONNECTION_ERROR_FLAG_NAME = "--jira-connection-error-strategy"
 STRICT = "strict"
 SKIP = "skip"
-IGNORE = "ignore"
 PLUGIN_NAME = "jira_plugin"
-URL_ENV_VAR = "PYTEST_JIRA_URL"
-PASSWORD_ENV_VAR = "PYTEST_JIRA_PASSWORD"
-USERNAME_ENV_VAR = "PYTEST_JIRA_USERNAME"
-TOKEN_ENV_VAR = "PYTEST_JIRA_TOKEN"
-CLOUD_ID_ENV_VAR = "PYTEST_JIRA_CLOUD_ID"
-OAUTH_CLIENT_ID_ENV_VAR = "PYTEST_JIRA_OAUTH_CLIENT_ID"
-OAUTH_CLIENT_SECRET_ENV_VAR = "PYTEST_JIRA_OAUTH_CLIENT_SECRET"
-GATEWAY_URL = "https://api.atlassian.com/ex/jira/{cloud_id}"
 AUTH_BASIC = "basic"
 AUTH_OAUTH = "oauth"
 AUTH_PAT = "pat"
@@ -64,24 +55,6 @@ _SA_TOKEN_FAILURES = {}
 # pytest's usage-error code, spelled out rather than read from pytest.ExitCode
 # so that an old pytest without the enum still fails instead of exiting 0.
 USAGE_ERROR_CODE = getattr(getattr(pytest, "ExitCode", None), "USAGE_ERROR", 4)
-CLOUD_OAUTH_NEEDS_CLOUD_ID = (
-    "An OAuth 2.0 service account needs the cloud id: pass --jira-cloud-id "
-    "<cloudId> (or set cloud_id in jira.cfg / PYTEST_JIRA_CLOUD_ID). The "
-    "plugin builds https://api.atlassian.com/ex/jira/<cloudId> from it."
-)
-PROBE_FORBIDDEN_WARNING = (
-    "pytest-jira: Jira answered 403 for /rest/api/2/myself. The service "
-    "account may lack read:jira-user, which is fine, but if every marked "
-    "issue looks missing (404) grant it Browse projects on those projects."
-)
-TOKEN_REMINT_WARNING = (
-    "pytest-jira: Jira answered 401 for %s with the cached access token; "
-    "dropping it and retrying with a freshly minted one."
-)
-MISSING_URL_ERROR = (
-    "--jira needs a Jira url: pass --jira-url, set PYTEST_JIRA_URL or put "
-    "url in jira.cfg. Without it no issue check can run."
-)
 # Upper bound for one Jira request attempt, so a stalled server cannot hang
 # the whole test session (retries multiply it).
 JIRA_REQUEST_TIMEOUT = 30
@@ -94,20 +67,6 @@ TOKEN_RETRY_BACKOFF_FACTOR = 0.5
 MAX_RETRY_AFTER = 10
 # Lifetime assumed when the token endpoint reports none.
 SA_TOKEN_ASSUMED_LIFETIME = 3600
-UNUSED_CLOUD_ID_WARNING = (
-    "pytest-jira: cloud_id only applies to a Jira Cloud service account; "
-    "without an OAuth 2.0 credential it is ignored and %s is used as "
-    "given. Remove it (--jira-cloud-id, PYTEST_JIRA_CLOUD_ID or cloud_id in "
-    "jira.cfg) if this is a Server/DC instance."
-)
-OAUTH_AUTH_ERROR_HINT = (
-    "Jira rejected the credentials for %s (HTTP %s).\n"
-    "The access token was minted from the OAuth 2.0 credential, so check "
-    "PYTEST_JIRA_OAUTH_CLIENT_ID / PYTEST_JIRA_OAUTH_CLIENT_SECRET "
-    "(--jira-oauth-client-id / --jira-oauth-client-secret) and the cloud "
-    "id, and that the service account has product access to Jira plus "
-    "Browse projects on every project you mark tests with."
-)
 
 
 def _clean(value):
@@ -372,6 +331,20 @@ ResolvedAuth = collections.namedtuple(
 )
 
 
+UNUSED_CLOUD_ID_WARNING = (
+    "pytest-jira: cloud_id only applies to a Jira Cloud service account; "
+    "without an OAuth 2.0 credential it is ignored and %s is used as "
+    "given. Remove it (--jira-cloud-id, PYTEST_JIRA_CLOUD_ID or cloud_id in "
+    "jira.cfg) if this is a Server/DC instance."
+)
+CLOUD_OAUTH_NEEDS_CLOUD_ID = (
+    "An OAuth 2.0 service account needs the cloud id: pass --jira-cloud-id "
+    "<cloudId> (or set cloud_id in jira.cfg / PYTEST_JIRA_CLOUD_ID). The "
+    "plugin builds https://api.atlassian.com/ex/jira/<cloudId> from it."
+)
+GATEWAY_URL = "https://api.atlassian.com/ex/jira/{cloud_id}"
+
+
 def _resolve_auth(
     url, username, password, token, cloud_id, oauth_client_id, oauth_secret
 ):
@@ -469,6 +442,16 @@ def _unauthorized_status(exc):
     return status if status == 401 else None
 
 
+OAUTH_AUTH_ERROR_HINT = (
+    "Jira rejected the credentials for %s (HTTP %s).\n"
+    "The access token was minted from the OAuth 2.0 credential, so check "
+    "PYTEST_JIRA_OAUTH_CLIENT_ID / PYTEST_JIRA_OAUTH_CLIENT_SECRET "
+    "(--jira-oauth-client-id / --jira-oauth-client-secret) and the cloud "
+    "id, and that the service account has product access to Jira plus "
+    "Browse projects on every project you mark tests with."
+)
+
+
 def _hint(exc, conn):
     """Return actionable guidance for a failed request, or None.
 
@@ -521,6 +504,17 @@ def _write_stderr(message, config=None):
         print(message, file=sys.stderr)
     except Exception:  # pragma: no cover - stderr is unusable
         pass
+
+
+PROBE_FORBIDDEN_WARNING = (
+    "pytest-jira: Jira answered 403 for /rest/api/2/myself. The service "
+    "account may lack read:jira-user, which is fine, but if every marked "
+    "issue looks missing (404) grant it Browse projects on those projects."
+)
+TOKEN_REMINT_WARNING = (
+    "pytest-jira: Jira answered 401 for %s with the cached access token; "
+    "dropping it and retrying with a freshly minted one."
+)
 
 
 def _report_notices(conn, config=None):
@@ -1071,6 +1065,9 @@ def _get_bool(config, section, name, default=False):
     return default
 
 
+IGNORE = "ignore"
+
+
 def pytest_addoption(parser):
     """
     Add a options section to py.test --help for jira integration.
@@ -1298,6 +1295,12 @@ def pytest_unconfigure(config):
     _SA_TOKEN_FAILURES.clear()
 
 
+MISSING_URL_ERROR = (
+    "--jira needs a Jira url: pass --jira-url, set PYTEST_JIRA_URL or put "
+    "url in jira.cfg. Without it no issue check can run."
+)
+
+
 def pytest_configure(config):
     """Register the plugin, resolving the Jira auth mode for this run.
 
@@ -1340,28 +1343,28 @@ def pytest_configure(config):
         resolved_resolutions = []
 
     if config.getvalue("jira"):
-        jira_url = _get_setting(URL_ENV_VAR, config, "jira_url")
+        jira_url = _get_setting("PYTEST_JIRA_URL", config, "jira_url")
         if not jira_url:
             raise pytest.UsageError(MISSING_URL_ERROR)
         try:
             jira_connection = JiraSiteConnection(
                 jira_url,
-                _get_setting(USERNAME_ENV_VAR, config, "jira_username"),
-                _get_setting(PASSWORD_ENV_VAR, config, "jira_password"),
+                _get_setting("PYTEST_JIRA_USERNAME", config, "jira_username"),
+                _get_setting("PYTEST_JIRA_PASSWORD", config, "jira_password"),
                 config.getvalue("jira_verify"),
-                _get_setting(TOKEN_ENV_VAR, config, "jira_token"),
+                _get_setting("PYTEST_JIRA_TOKEN", config, "jira_token"),
                 oauth_client_id=_get_setting(
-                    OAUTH_CLIENT_ID_ENV_VAR,
+                    "PYTEST_JIRA_OAUTH_CLIENT_ID",
                     config,
                     "jira_oauth_client_id",
                 ),
                 oauth_client_secret=_get_setting(
-                    OAUTH_CLIENT_SECRET_ENV_VAR,
+                    "PYTEST_JIRA_OAUTH_CLIENT_SECRET",
                     config,
                     "jira_oauth_client_secret",
                 ),
                 cloud_id=_get_setting(
-                    CLOUD_ID_ENV_VAR, config, "jira_cloud_id"
+                    "PYTEST_JIRA_CLOUD_ID", config, "jira_cloud_id"
                 ),
             )
         except JiraConfigError as exc:
