@@ -36,37 +36,20 @@ CONNECTION_SKIP_MESSAGE = "Jira connection issue, skipping test: %s"
 CONNECTION_ERROR_FLAG_NAME = "--jira-connection-error-strategy"
 STRICT = "strict"
 SKIP = "skip"
+IGNORE = "ignore"
 PLUGIN_NAME = "jira_plugin"
 AUTH_BASIC = "basic"
 AUTH_OAUTH = "oauth"
 AUTH_PAT = "pat"
-# "OAuth 2.0 credentials for service accounts": the client secret is
-# exchanged here for a short-lived access token. The secret itself is never
-# sent to the API gateway.
-ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
-# Re-mint this many seconds before a cached access token expires.
-SA_TOKEN_REFRESH_MARGIN = 120
-# Floor for a cached lifetime reported as 0 or as something shorter than
-# SA_TOKEN_REFRESH_MARGIN: such an entry would be dead on arrival and turn
-# every Jira request into another mint.
-SA_TOKEN_MIN_LIFETIME = 300
-_SA_TOKEN_CACHE = {}
-_SA_TOKEN_FAILURES = {}
 # pytest's usage-error code, spelled out rather than read from pytest.ExitCode
 # so that an old pytest without the enum still fails instead of exiting 0.
 USAGE_ERROR_CODE = getattr(getattr(pytest, "ExitCode", None), "USAGE_ERROR", 4)
 # Upper bound for one Jira request attempt, so a stalled server cannot hang
 # the whole test session (retries multiply it).
 JIRA_REQUEST_TIMEOUT = 30
-# The token endpoint is a fixed Atlassian service and answers quickly.
-TOKEN_REQUEST_TIMEOUT = 15
-# Retry policy for the token endpoint only.
-TOKEN_RETRY_TOTAL = 3
-TOKEN_RETRY_BACKOFF_FACTOR = 0.5
-# Longest wait a Retry-After header may impose on a mint.
+# Longest wait a Retry-After header may impose on one attempt (both the mint
+# and the Jira session cap it).
 MAX_RETRY_AFTER = 10
-# Lifetime assumed when the token endpoint reports none.
-SA_TOKEN_ASSUMED_LIFETIME = 3600
 
 
 def _clean(value):
@@ -88,10 +71,16 @@ def _get_setting(env_var, config, name):
     return _clean(os.getenv(env_var)) or _clean(config.getvalue(name))
 
 
-# One url-ish run of text that still carries userinfo. No "://" anchor on
-# purpose: a message quotes back whatever url it was given, and a wrong config
-# produces shapes with one slash, no scheme or no host prefix at all.
-_USERINFO_RE = re.compile(r"[^\s'\"]*@[^\s'\"]*")
+# Inside a run any number of horizontal whitespace runs is crossed, never a
+# newline; an "@" is part of the userinfo when another "@" follows, so the run
+# ends at the last one. The second alternative takes a colon with no slashes.
+# shortcut: a newline inside a userinfo is not crossed, so a url split across
+# lines is not redacted; upgrade if a config can produce one
+_USERINFO_RE = re.compile(
+    r"(?:[^\s'\"@]*@)*(?:[a-zA-Z][\w+.-]*:)?/{1,}[^\s]*"
+    r"(?:[^\S\n]+[^\s]*)*@[^\s'\"]*"
+    r"|[^\s'\"/@()]*:[^\s/]*(?:[^\S\n]+[^\s/]*)*@[^\s'\"]*"
+)
 # Where the authority of such a run starts: after a scheme and its slashes.
 _AUTHORITY_START_RE = re.compile(r"(?:[a-zA-Z][\w+.-]*:)?/+")
 _AUTHORITY_END_RE = re.compile(r"[/?#]")
@@ -102,15 +91,20 @@ _URL_PLACEHOLDER = "<url>"
 def _without_userinfo(match):
     """Return one url-ish run of text without the userinfo of its authority.
 
-    The authority is delimited by its own bounds instead of a ``://`` anchor,
-    so ``https:/user:pw@host`` (which parses as a path), ``//user:pw@host``
-    and ``user:pw@host`` are found too. Two cases:
-
-    * An ``@`` in the authority with no ``@`` after it is userinfo: it is
-      split on its LAST ``@`` (an unescaped ``@`` in the password belongs to
-      the credentials), and the raw ``host[:port]`` is kept as written, so a
-      malformed port survives.
-    * No ``@`` at all: the run is returned unchanged.
+    A run is a candidate when it carries a scheme or leading slashes
+    (``https://user:pw@host``, ``https:/user:pw@host`` which parses as a path,
+    ``//user:pw@host``) or when a ``:`` sits before the ``@``
+    (``user:pw@host``, the shape a scheme-less config produces). Any number of
+    horizontal whitespace runs may sit inside the userinfo
+    (``u:pa ss@host``); a newline never may, so a later ``@`` on another line
+    is not folded in.
+    Not detected: a bare address with no scheme, no slashes and no colon, so
+    ``me@example.com`` in prose is untouched. The authority is then
+    delimited by its own bounds instead of a ``://`` anchor. An ``@`` in the
+    authority with no ``@`` after it is userinfo: it is split on its LAST
+    ``@`` (an unescaped ``@`` in the password belongs to the credentials),
+    and the raw ``host[:port]`` is kept as written, so a malformed port
+    survives.
 
     Any other ``@`` cannot be bounded, so the run fails closed and becomes
     ``<url>``. That covers a path or query ``@``
@@ -126,8 +120,7 @@ def _without_userinfo(match):
     authority = text[start:end]
     if "@" in authority and "@" not in text[:start] + text[end:]:
         return text[:start] + authority.rpartition("@")[2] + text[end:]
-    if "@" not in text:
-        return text
+    # _USERINFO_RE only matches runs carrying an "@", so this always redacts.
     return _URL_PLACEHOLDER
 
 
@@ -142,7 +135,10 @@ def _split_url_userinfo(url):
     Credentials embedded in a URL would end up in tracebacks and reports, so
     they are lifted out and used as basic-auth credentials instead.
     """
-    parsed = urlparse(url or "")
+    # urlparse drops these from the netloc, which would make the replace below
+    # miss; removing them up front keeps netloc verbatim in the url.
+    url = re.sub(r"[\t\n\r]", "", url or "")
+    parsed = urlparse(url)
     if "@" not in parsed.netloc:
         return url, None, None
     user = parsed.username
@@ -186,25 +182,12 @@ class JiraOAuthMintError(RuntimeError):
     show, it never contains the client secret."""
 
 
-def _credential_key(client_id, client_secret):
-    """Return a cache key that does not retain the client secret."""
-    digest = hashlib.sha256((client_secret or "").encode()).hexdigest()
-    return client_id, digest
-
-
-def _forget_access_token(client_id, client_secret):
-    """Drop a cached token and any remembered mint failure."""
-    key = _credential_key(client_id, client_secret)
-    _SA_TOKEN_CACHE.pop(key, None)
-    _SA_TOKEN_FAILURES.pop(key, None)
-
-
 class _CappedRetry(urllib3.Retry):
     """Retry that will not wait longer than MAX_RETRY_AFTER seconds.
 
     urllib3 honours ``Retry-After`` verbatim, so a 429 carrying an hour
-    would block the mint for an hour. Capping the parsed value bounds the
-    wait without sleeping here.
+    would block one attempt for an hour. Capping the parsed value bounds the
+    wait without sleeping here. Both the mint and the Jira session mount it.
     """
 
     def get_retry_after(self, response):
@@ -217,112 +200,6 @@ class _CappedRetry(urllib3.Retry):
         if not seconds:
             return seconds
         return min(seconds, MAX_RETRY_AFTER)
-
-
-# What a transport failure looks like, at both layers the mint can see.
-_TRANSPORT_ERRORS = (
-    requests.RequestException,
-    urllib3.exceptions.HTTPError,
-)
-
-
-def _token_session():
-    """Return a session that retries the token endpoint on 429/5xx.
-
-    A transient mint failure should not kill the run: it is one extra request
-    next to the Jira calls, and ``Retry-After`` is honoured.
-    """
-    session = requests.Session()
-    retries = _CappedRetry(
-        total=TOKEN_RETRY_TOTAL,
-        backoff_factor=TOKEN_RETRY_BACKOFF_FACTOR,
-        respect_retry_after_header=True,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods={"POST"},
-    )
-    adapter = requests.adapters.HTTPAdapter(max_retries=retries)
-    session.mount("https://", adapter)
-    return session
-
-
-def _mint_access_token(client_id, client_secret):
-    """Return a short-lived access token for an OAuth 2.0 credential.
-
-    POSTs ``client_credentials`` to the Atlassian token endpoint and caches
-    the result until ``SA_TOKEN_REFRESH_MARGIN`` seconds before it expires.
-    TLS verification stays on and redirects are not followed, because the
-    request carries the client secret.
-    """
-    key = _credential_key(client_id, client_secret)
-    now = time.monotonic()
-    cached = _SA_TOKEN_CACHE.get(key)
-    if cached and cached[1] - SA_TOKEN_REFRESH_MARGIN > now:
-        return cached[0]
-    remembered = _SA_TOKEN_FAILURES.get(key)
-    if remembered:
-        raise JiraOAuthMintError(remembered)
-    session = _token_session()
-    try:
-        try:
-            response = session.post(
-                ATLASSIAN_TOKEN_URL,
-                json={
-                    "grant_type": "client_credentials",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
-                verify=True,
-                allow_redirects=False,
-                timeout=TOKEN_REQUEST_TIMEOUT,
-            )
-        except _TRANSPORT_ERRORS as exc:
-            # Transient: do not remember it, the next call may well succeed.
-            raise JiraOAuthMintError(
-                "Could not mint an Atlassian access token from the OAuth "
-                "2.0 credential (%s: %s)." % (type(exc).__name__, exc)
-            ) from exc
-        if response.status_code != 200:
-            message = (
-                "Could not mint an Atlassian access token from the OAuth "
-                "2.0 credential (HTTP %s): check "
-                "PYTEST_JIRA_OAUTH_CLIENT_ID and "
-                "PYTEST_JIRA_OAUTH_CLIENT_SECRET." % response.status_code
-            )
-            if response.status_code in (400, 401, 403):
-                # A rejected credential will not heal: remember it to save a
-                # POST per marked issue. A 429/5xx that survived the retries is
-                # transient, so it is raised uncached and can retry.
-                _SA_TOKEN_FAILURES[key] = message
-            raise JiraOAuthMintError(message)
-        try:
-            payload = response.json()
-            access_token = payload["access_token"]
-            raw_expires = payload.get("expires_in")
-            # absent or null: assume the usual hour. An explicit 0 or negative
-            # keeps meaning "no usable lifetime" and falls to the short floor.
-            expires_in = (
-                SA_TOKEN_ASSUMED_LIFETIME
-                if raw_expires is None
-                else float(raw_expires)
-            )
-        except (ValueError, KeyError, TypeError) as exc:
-            # A garbled response says nothing about the credential: retry.
-            raise JiraOAuthMintError(
-                "Could not mint an Atlassian access token: unexpected "
-                "response from %s." % ATLASSIAN_TOKEN_URL
-            ) from exc
-        if not isinstance(access_token, str) or not access_token:
-            raise JiraOAuthMintError(
-                "Could not mint an Atlassian access token: no access token "
-                "in the response from %s." % ATLASSIAN_TOKEN_URL
-            )
-        # A lifetime shorter than the refresh margin would make the entry
-        # dead on arrival and turn every Jira request into another mint.
-        expires_in = max(expires_in, SA_TOKEN_MIN_LIFETIME)
-        _SA_TOKEN_CACHE[key] = (access_token, now + expires_in)
-        return access_token
-    finally:
-        session.close()
 
 
 ResolvedAuth = collections.namedtuple(
@@ -745,6 +622,144 @@ class JiraHooks(object):
         return bool(self.components.intersection(affected))
 
 
+# "OAuth 2.0 credentials for service accounts": the client secret is
+# exchanged here for a short-lived access token. The secret itself is never
+# sent to the API gateway.
+ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
+# Re-mint this many seconds before a cached access token expires.
+SA_TOKEN_REFRESH_MARGIN = 120
+# Floor for a cached lifetime reported as 0 or as something shorter than
+# SA_TOKEN_REFRESH_MARGIN: such an entry would be dead on arrival and turn
+# every Jira request into another mint.
+SA_TOKEN_MIN_LIFETIME = 300
+# The token endpoint is a fixed Atlassian service and answers quickly.
+TOKEN_REQUEST_TIMEOUT = 15
+# Retry policy for the token endpoint only.
+TOKEN_RETRY_TOTAL = 3
+TOKEN_RETRY_BACKOFF_FACTOR = 0.5
+# Lifetime assumed when the token endpoint reports none.
+SA_TOKEN_ASSUMED_LIFETIME = 3600
+# What a transport failure looks like, at both layers the mint can see.
+_TRANSPORT_ERRORS = (
+    requests.RequestException,
+    urllib3.exceptions.HTTPError,
+)
+_SA_TOKEN_CACHE = {}
+_SA_TOKEN_FAILURES = {}
+
+
+def _credential_key(client_id, client_secret):
+    """Return a cache key that does not retain the client secret."""
+    digest = hashlib.sha256((client_secret or "").encode()).hexdigest()
+    return client_id, digest
+
+
+def _forget_access_token(client_id, client_secret):
+    """Drop a cached token and any remembered mint failure."""
+    key = _credential_key(client_id, client_secret)
+    _SA_TOKEN_CACHE.pop(key, None)
+    _SA_TOKEN_FAILURES.pop(key, None)
+
+
+def _token_session():
+    """Return a session that retries the token endpoint on 429/5xx.
+
+    A transient mint failure should not kill the run: it is one extra request
+    next to the Jira calls, and ``Retry-After`` is honoured.
+    """
+    session = requests.Session()
+    retries = _CappedRetry(
+        total=TOKEN_RETRY_TOTAL,
+        backoff_factor=TOKEN_RETRY_BACKOFF_FACTOR,
+        respect_retry_after_header=True,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods={"POST"},
+    )
+    adapter = requests.adapters.HTTPAdapter(max_retries=retries)
+    session.mount("https://", adapter)
+    return session
+
+
+def _mint_access_token(client_id, client_secret):
+    """Return a short-lived access token for an OAuth 2.0 credential.
+
+    POSTs ``client_credentials`` to the Atlassian token endpoint and caches
+    the result until ``SA_TOKEN_REFRESH_MARGIN`` seconds before it expires.
+    TLS verification stays on and redirects are not followed, because the
+    request carries the client secret.
+    """
+    key = _credential_key(client_id, client_secret)
+    now = time.monotonic()
+    cached = _SA_TOKEN_CACHE.get(key)
+    if cached and cached[1] - SA_TOKEN_REFRESH_MARGIN > now:
+        return cached[0]
+    remembered = _SA_TOKEN_FAILURES.get(key)
+    if remembered:
+        raise JiraOAuthMintError(remembered)
+    session = _token_session()
+    try:
+        try:
+            response = session.post(
+                ATLASSIAN_TOKEN_URL,
+                json={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                },
+                verify=True,
+                allow_redirects=False,
+                timeout=TOKEN_REQUEST_TIMEOUT,
+            )
+        except _TRANSPORT_ERRORS as exc:
+            # Transient: do not remember it, the next call may well succeed.
+            raise JiraOAuthMintError(
+                "Could not mint an Atlassian access token from the OAuth "
+                "2.0 credential (%s: %s)." % (type(exc).__name__, exc)
+            ) from exc
+        if response.status_code != 200:
+            message = (
+                "Could not mint an Atlassian access token from the OAuth "
+                "2.0 credential (HTTP %s): check "
+                "PYTEST_JIRA_OAUTH_CLIENT_ID and "
+                "PYTEST_JIRA_OAUTH_CLIENT_SECRET." % response.status_code
+            )
+            if response.status_code in (400, 401, 403):
+                # A rejected credential will not heal: remember it to save a
+                # POST per marked issue. A 429/5xx that survived the retries is
+                # transient, so it is raised uncached and can retry.
+                _SA_TOKEN_FAILURES[key] = message
+            raise JiraOAuthMintError(message)
+        try:
+            payload = response.json()
+            access_token = payload["access_token"]
+            raw_expires = payload.get("expires_in")
+            # absent or null: assume the usual hour. An explicit 0 or negative
+            # keeps meaning "no usable lifetime" and falls to the short floor.
+            expires_in = (
+                SA_TOKEN_ASSUMED_LIFETIME
+                if raw_expires is None
+                else float(raw_expires)
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            # A garbled response says nothing about the credential: retry.
+            raise JiraOAuthMintError(
+                "Could not mint an Atlassian access token: unexpected "
+                "response from %s." % ATLASSIAN_TOKEN_URL
+            ) from exc
+        if not isinstance(access_token, str) or not access_token:
+            raise JiraOAuthMintError(
+                "Could not mint an Atlassian access token: no access token "
+                "in the response from %s." % ATLASSIAN_TOKEN_URL
+            )
+        # A lifetime shorter than the refresh margin would make the entry
+        # dead on arrival and turn every Jira request into another mint.
+        expires_in = max(expires_in, SA_TOKEN_MIN_LIFETIME)
+        _SA_TOKEN_CACHE[key] = (access_token, now + expires_in)
+        return access_token
+    finally:
+        session.close()
+
+
 class JiraSiteConnection(object):
     def __init__(
         self,
@@ -1063,9 +1078,6 @@ def _get_bool(config, section, name, default=False):
     if config.has_option(section, name):
         return config.getboolean(section, name, raw=True)
     return default
-
-
-IGNORE = "ignore"
 
 
 def pytest_addoption(parser):

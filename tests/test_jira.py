@@ -1,7 +1,7 @@
 import os
 import re
 import time
-from urllib.parse import urlunparse
+from urllib.parse import quote, urlunparse
 
 import pytest
 import requests
@@ -247,6 +247,15 @@ def clean_token_cache():
     plugin._SA_TOKEN_FAILURES.clear()
 
 
+def _credential_url(shape):
+    """Splice a password that must never be echoed into a url shape.
+
+    Built rather than written out: a literal credentials-in-URL would be
+    flagged by the repo's secret scanner, which is the point of it.
+    """
+    return shape % "pw-for-test"
+
+
 class TestJiraSiteConnectionAuth:
     """Unit tests for JiraSiteConnection auth modes."""
 
@@ -430,6 +439,45 @@ class TestJiraCloudAuth:
         assert plugin._host(
             "https://" + userinfo + "example.atlassian.net"
         ) == ("example.atlassian.net")
+
+    def test_strip_userinfo_redacts_a_whitespace_split_password(self):
+        """A userinfo split by a space is one unit, so nothing survives."""
+        masked = plugin._strip_userinfo(
+            "Failed to parse: https://u:pa ss@jira.example.com/x"
+        )
+        assert "jira.example.com" in masked, masked
+        assert "u:pa" not in masked, masked
+        assert "pa ss" not in masked, masked
+
+    @pytest.mark.parametrize(
+        "raw", ["pa\nss", "pa\tss"], ids=["newline", "tab"]
+    )
+    def test_split_url_userinfo_normalises_control_whitespace(self, raw):
+        """urlparse drops these from the netloc, so clean them first."""
+        url, user, password = plugin._split_url_userinfo(
+            "https://svc:%s@jira.invalid" % raw
+        )
+        assert url == "https://jira.invalid", repr(url)
+        assert (user, password) == ("svc", "pass")
+        assert "pa" not in url and "pass" not in url
+
+    def test_strip_userinfo_hides_a_quote_in_a_password(self):
+        """A quote before the '@' must not stop the run at the password."""
+        password = 'pw"quote'
+        for shape in ("https:/svc:%s@jira.invalid", "svc:%s@host"):
+            masked = plugin._strip_userinfo(shape % password)
+            assert password not in masked, masked
+            assert "pw" not in masked, masked
+        # the closing quote of a quoted url is kept, only the userinfo goes
+        assert plugin._strip_userinfo('"https://u:pw@host"') == (
+            '"https://host"'
+        )
+
+    def test_strip_userinfo_leaves_prose_email_alone(self):
+        """No scheme and no slashes: an email in prose is not a url."""
+        assert plugin._strip_userinfo("contact me@example.com for access") == (
+            "contact me@example.com for access"
+        )
 
     def test_strip_userinfo_keeps_the_host_only_for_a_real_authority(self):
         """Authority userinfo loses its credentials but keeps the host."""
@@ -755,13 +803,18 @@ class TestJiraCloudAuth:
     @pytest.mark.parametrize(
         "shape",
         [
-            "https:/%s",
-            "//%s",
-            "%s",
-            "https:///%s",
-            "https:////%s",
-            "http//%s",
-            "http///%s",
+            "https:/svc:%s@jira.invalid",
+            "//svc:%s@jira.invalid",
+            "svc:%s@jira.invalid",
+            "https:///svc:%s@jira.invalid",
+            "https:////svc:%s@jira.invalid",
+            "http//svc:%s@jira.invalid",
+            "http///svc:%s@jira.invalid",
+            "https://svc:%s for test@jira.invalid",
+            "https:/svc:%s for test@jira.invalid",
+            "https:u:%s@host",
+            "https:\\u:%s@host",
+            'https:/svc:%s"quote@jira.invalid',
         ],
         ids=[
             "one-slash",
@@ -771,14 +824,18 @@ class TestJiraCloudAuth:
             "four-slashes",
             "missing-scheme-colon",
             "missing-colon-three-slashes",
+            "whitespace-userinfo",
+            "whitespace-userinfo-one-slash",
+            "no-slash-userinfo",
+            "no-slash-userinfo-backslash",
+            "quote-in-password",
         ],
     )
     def test_url_shapes_without_an_authority_do_not_leak(self, testdir, shape):
         """A url that is barely a url must still not echo its password."""
-        # built rather than written out: a literal credentials-in-URL would
-        # be flagged by the repo's secret scanner, which is the point of it
-        userinfo = "%s:%s@" % ("svc", "pw-for-test")
-        url = shape % (userinfo + "jira.invalid")
+        password = "pw-for-test"
+        userinfo = "svc:%s@" % password
+        url = _credential_url(shape)
         testdir.makepyfile(
             """
             import pytest
@@ -837,13 +894,18 @@ class TestJiraCloudAuth:
     @pytest.mark.parametrize(
         "shape",
         [
-            "https:/%s",
-            "//%s",
-            "%s",
-            "https:///%s",
-            "https:////%s",
-            "http//%s",
-            "http///%s",
+            "https:/svc:%s@jira.invalid",
+            "//svc:%s@jira.invalid",
+            "svc:%s@jira.invalid",
+            "https:///svc:%s@jira.invalid",
+            "https:////svc:%s@jira.invalid",
+            "http//svc:%s@jira.invalid",
+            "http///svc:%s@jira.invalid",
+            "https://svc:%s for test@jira.invalid",
+            "https:/svc:%s for test@jira.invalid",
+            "https:u:%s@host",
+            "https:\\u:%s@host",
+            'https:/svc:%s"quote@jira.invalid',
         ],
         ids=[
             "one-slash",
@@ -853,16 +915,20 @@ class TestJiraCloudAuth:
             "four-slashes",
             "missing-scheme-colon",
             "missing-colon-three-slashes",
+            "whitespace-userinfo",
+            "whitespace-userinfo-one-slash",
+            "no-slash-userinfo",
+            "no-slash-userinfo-backslash",
+            "quote-in-password",
         ],
     )
     def test_strict_traceback_does_not_leak_a_url_password(
         self, testdir, shape
     ):
         """The redaction boundary covers the re-raised traceback too."""
-        # built rather than written out: a literal credentials-in-URL would
-        # be flagged by the repo's secret scanner, which is the point of it
-        userinfo = "%s:%s@" % ("svc", "pw-for-test")
-        url = shape % (userinfo + "jira.invalid")
+        password = "pw-for-test"
+        userinfo = "svc:%s@" % password
+        url = _credential_url(shape)
         testdir.makepyfile(
             """
             import pytest
@@ -908,6 +974,19 @@ class TestJiraCloudAuth:
         conn = plugin.JiraSiteConnection(url)
         assert conn.basic_auth == ("svc", "pw-for-test")
         assert userinfo not in conn.url
+
+    def test_userinfo_split_by_a_newline_never_reaches_the_connection(self):
+        """The lifted credentials must not survive in any reported string."""
+        # built rather than written out: a literal credentials-in-URL would
+        # be flagged by the repo's secret scanner, which is the point of it
+        userinfo = "%s:%s@" % ("svc", "pa\nss")
+        conn = plugin.JiraSiteConnection("https://" + userinfo + "jira.invalid")
+        assert conn.url == "https://jira.invalid", repr(conn.url)
+        assert conn.site_url == "https://jira.invalid", repr(conn.site_url)
+        assert conn.basic_auth == ("svc", "pass")
+        for text in (conn.url, conn.site_url) + tuple(conn.warnings):
+            assert "pass" not in text, text
+            assert "pa\nss" not in text, text
 
     def test_ipv6_userinfo_keeps_brackets(self):
         userinfo = "%s:%s@" % ("svc", "pw-for-test")
@@ -2066,6 +2145,78 @@ class TestServiceAccountToken:
             plugin._mint_access_token("cid2", "sec2")
         assert len(posts) == 3, posts
 
+    def test_unparseable_token_response_is_not_remembered(self, monkeypatch):
+        """A garbled 200 says nothing about the credential: retry."""
+        posts = []
+
+        class Response(object):
+            status_code = 200
+
+            def json(self):
+                raise ValueError("Expecting value: line 1 column 1")
+
+        class Session(object):
+            def post(self, url, **kwargs):
+                posts.append(url)
+                return Response()
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(plugin, "_token_session", lambda: Session())
+        for _ in range(2):
+            with pytest.raises(plugin.JiraOAuthMintError) as exc:
+                plugin._mint_access_token("cid", "sec")
+            # the message names the endpoint so the operator knows which
+            # token URL answered garbage
+            assert str(exc.value) == (
+                "Could not mint an Atlassian access token: unexpected "
+                "response from %s." % plugin.ATLASSIAN_TOKEN_URL
+            ), str(exc.value)
+            assert plugin._SA_TOKEN_FAILURES == {}, plugin._SA_TOKEN_FAILURES
+        assert len(posts) == 2, posts
+
+    def test_token_response_without_a_usable_token_is_not_remembered(
+        self, monkeypatch
+    ):
+        """A 200 without a usable access_token is retried, not remembered."""
+        posts = []
+
+        class Response(object):
+            status_code = 200
+
+            def __init__(self, payload):
+                self.payload = payload
+
+            def json(self):
+                return self.payload
+
+        # missing, not a string, empty: each one twice, to prove the retry
+        queue = [
+            Response({"access_token": value})
+            for value in (None, 1234, "")
+            for _ in (0, 1)
+        ]
+
+        class Session(object):
+            def post(self, url, **kwargs):
+                posts.append(url)
+                return queue.pop(0)
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(plugin, "_token_session", lambda: Session())
+        for _ in range(len(queue)):
+            with pytest.raises(plugin.JiraOAuthMintError) as exc:
+                plugin._mint_access_token("cid", "sec")
+            assert str(exc.value) == (
+                "Could not mint an Atlassian access token: no access token "
+                "in the response from %s." % plugin.ATLASSIAN_TOKEN_URL
+            ), str(exc.value)
+            assert plugin._SA_TOKEN_FAILURES == {}, plugin._SA_TOKEN_FAILURES
+        assert len(posts) == 6, posts
+
 
 class TestOAuthServiceAccount:
     """How an OAuth 2.0 service-account run is resolved and reported.
@@ -2163,6 +2314,26 @@ class TestOAuthServiceAccount:
         assert conn.basic_auth == ("svc", "pw-for-test")
         assert userinfo not in conn.url
         assert any("embedded in the url" in w for w in conn.warnings)
+
+    def test_userinfo_without_a_scheme_is_redacted(self):
+        """A ':' before the '@' marks a credential; a scheme is not needed."""
+        # built rather than written out: a literal credentials-in-URL would
+        # be flagged by the repo's secret scanner, which is the point of it
+        password = "pw-for-test"
+        for shape in (
+            "user:%s@host",
+            "https:u:%s@host",
+            "https:\\u:%s@host",
+        ):
+            text = plugin._strip_userinfo(
+                "cannot connect to " + shape % password
+            )
+            assert password not in text, text
+            assert "user:" not in text, text
+            assert text == "cannot connect to host", text
+        # the anchor that keeps the ':' rule safe: prose keeps its address
+        prose = "contact me@example.com for access"
+        assert plugin._strip_userinfo(prose) == prose
 
     def test_probe_404_is_not_taken_for_a_missing_issue(
         self, testdir, monkeypatch
@@ -2417,13 +2588,17 @@ class TestOAuthServiceAccount:
         )
 
     def test_strip_userinfo_without_a_scheme_colon(self):
-        """A missing scheme colon leaves the run unanchored, so no authority
-        is found and the whole run is redacted rather than guessed at."""
+        """A missing scheme colon still anchors on the leading slashes."""
         for url in ("http//svc:pw@host", "http///svc:pw@host"):
             masked = plugin._strip_userinfo(url)
-            assert masked == "<url>", masked
+            assert masked.endswith("host"), masked
             assert "pw" not in masked, masked
         assert plugin._strip_userinfo("https://host/x@y") == "<url>"
+
+    def test_strip_userinfo_without_a_scheme_and_a_space(self):
+        """A colon-bearing userinfo needs no scheme, even across a space."""
+        masked = plugin._strip_userinfo("svc:pa sshunter2@host/x")
+        assert masked == "host/x", masked
 
     def test_a_raw_slash_in_a_password_redacts_the_whole_run(self):
         """A raw '/' in a password is ambiguous (it also starts the path), so
@@ -2457,6 +2632,245 @@ class TestOAuthServiceAccount:
         assert "PYTEST_JIRA_OAUTH_CLIENT_ID" in hint, hint
         # the secret VALUE must never be echoed, only the flag name
         assert fake_secret not in hint, hint
+
+
+# Unique sentinels, so a hit in any output is unambiguous. Obviously fake,
+# syntactically valid, and deliberately low entropy: the repo secret scanner
+# flags any high-entropy value assigned to a *secret*/*token*/*password* name,
+# which these are.
+SECRET_PASSWORD = "SENTINEL-PW-0000"
+SECRET_USER = "sentinel-user@example.invalid"
+SECRET_USER_ENCODED = quote(SECRET_USER, safe="")
+SECRET_TOKEN = "SENTINEL-TOKEN-0000"
+SECRET_CLIENT_SECRET = "SENTINEL-SECRET-0000"
+# The three url shapes a credential can hide in: an authority the plugin
+# lifts out, plus one-slashed and schemeless ones that stay in the request url.
+SECRET_URL_SHAPES = {
+    "authority": "https://%(user)s:%(password)s@host.invalid",
+    "one-slash": "https:/%(user)s:%(password)s@host.invalid",
+    "no-scheme": "%(user)s:%(password)s@host.invalid",
+}
+
+
+def _secret_url(shape):
+    """Build a url carrying both credential sentinels.
+
+    Formatted rather than written out: a literal credentials-in-URL would be
+    flagged by the repo's secret scanner, which is the point of the test.
+    """
+    return shape % {"user": SECRET_USER_ENCODED, "password": SECRET_PASSWORD}
+
+
+def _assert_no_secret_leaked(output):
+    """One assert per secret, so a failure names the one that leaked."""
+    assert SECRET_PASSWORD not in output, "password leaked:\n" + output
+    assert SECRET_USER not in output, "username leaked:\n" + output
+    assert SECRET_USER_ENCODED not in output, (
+        "encoded username leaked:\n" + output
+    )
+    assert SECRET_TOKEN not in output, "token leaked:\n" + output
+    assert SECRET_CLIENT_SECRET not in output, (
+        "client secret leaked:\n" + output
+    )
+
+
+def _raise_401(url):
+    """Raise the error requests builds for a 401, url included."""
+    error = _http_error(401)
+    error.args = ("401 Client Error: Unauthorized for url: %s" % url,)
+    raise error
+
+
+class _TokenEndpoint503(object):
+    """A token endpoint that answers 503, without urllib3's retries."""
+
+    def post(self, *args, **kwargs):
+        return type("R", (), {"status_code": 503})()
+
+    def close(self):
+        pass
+
+
+class TestNothingSensitiveIsEverPrinted:
+    """No password, username/email, token or client secret in any output."""
+
+    @pytest.mark.parametrize(
+        "scenario, strategy",
+        [
+            ("user-401", "strict"),
+            ("user-401", "skip"),
+            ("mint-503", "strict"),
+            ("mint-503", "skip"),
+            ("oauth-401", "strict"),
+            ("oauth-401", "skip"),
+        ],
+    )
+    def test_a_failed_request_never_prints_a_credential(
+        self, testdir, monkeypatch, scenario, strategy
+    ):
+        seen = []
+
+        def unauthorized_request(self, method, url, **kwargs):
+            seen.append(kwargs)
+            return type(
+                "R",
+                (),
+                {
+                    "status_code": 401,
+                    "raise_for_status": lambda s: _raise_401(url),
+                },
+            )()
+
+        testdir.makepyfile(
+            """
+            import pytest
+
+            @pytest.mark.jira("ORG-1382", run=True)
+            def test_pass():
+                assert True
+            """
+        )
+        args = [
+            "--jira",
+            "--jira-url",
+            CLOUD_SITE,
+            "-rs",
+            "--jira-connection-error-strategy",
+            strategy,
+        ]
+        if scenario == "user-401":
+            args += [
+                "--jira-user",
+                SECRET_USER,
+                "--jira-token",
+                SECRET_TOKEN,
+            ]
+            monkeypatch.setattr(
+                requests.Session, "request", unauthorized_request
+            )
+        else:
+            args += [
+                "--jira-cloud-id",
+                "abc-123",
+                "--jira-oauth-client-id",
+                "cid",
+                "--jira-oauth-client-secret",
+                SECRET_CLIENT_SECRET,
+            ]
+            if scenario == "mint-503":
+                monkeypatch.setattr(
+                    plugin, "_token_session", lambda: _TokenEndpoint503()
+                )
+            else:
+                monkeypatch.setattr(
+                    plugin,
+                    "_mint_access_token",
+                    lambda cid, secret: SECRET_TOKEN,
+                )
+                monkeypatch.setattr(
+                    requests.Session, "request", unauthorized_request
+                )
+
+        result = testdir.runpytest(*args)
+        output = result.stdout.str() + result.stderr.str()
+        _assert_no_secret_leaked(output)
+        if scenario == "user-401":
+            # the basic-auth credentials really were the ones sent
+            assert seen and seen[0]["auth"] == (
+                SECRET_USER,
+                SECRET_TOKEN,
+            ), seen
+            assert "401 Client Error" in output, output
+        elif scenario == "mint-503":
+            # the mint really failed, and its message really was reported
+            assert "HTTP 503" in output, output
+        else:
+            # the minted token really was the bearer token sent
+            assert seen and seen[0]["headers"] == {
+                "Authorization": "Bearer " + SECRET_TOKEN
+            }, seen
+            assert "Jira rejected the credentials" in output, output
+        if strategy == "skip":
+            assert result.ret == 0, output
+            assert "SKIPPED" in output, output
+        else:
+            assert result.ret != 0, output
+
+    @pytest.mark.parametrize(
+        "shape",
+        list(SECRET_URL_SHAPES.values()),
+        ids=list(SECRET_URL_SHAPES),
+    )
+    @pytest.mark.parametrize(
+        "scenario", ["401-strict", "help", "cloud-id-warning"]
+    )
+    def test_a_credential_in_the_url_is_never_printed(
+        self, testdir, monkeypatch, scenario, shape
+    ):
+        url = _secret_url(shape)
+        if scenario == "help":
+            # jira.cfg supplies the url default: --help must not echo it
+            testdir.makefile(".cfg", jira="[DEFAULT]\nurl = " + url)
+            result = testdir.runpytest("--help")
+            output = result.stdout.str() + result.stderr.str()
+            _assert_no_secret_leaked(output)
+            assert result.ret == 0, output
+            assert "--jira-url" in output, output
+            return
+        if scenario == "cloud-id-warning":
+            # the cloud_id warning quotes the url: not the credentials
+            testdir.makepyfile(
+                """
+                def test_pass():
+                    assert True
+                """
+            )
+            result = testdir.runpytest(
+                "--jira",
+                "--jira-url",
+                url,
+                "--jira-cloud-id",
+                "abc-123",
+                "--jira-user",
+                SECRET_USER,
+                "--jira-token",
+                SECRET_TOKEN,
+            )
+            output = result.stdout.str() + result.stderr.str()
+            _assert_no_secret_leaked(output)
+            assert result.ret == 0, output
+            assert "cloud_id only applies" in output, output
+            return
+
+        def invalid_url_request(self, method, request_url, **kwargs):
+            # requests repeats the url it was given in this very message
+            raise requests.exceptions.InvalidURL(
+                "Invalid URL %r: No host supplied" % request_url
+            )
+
+        monkeypatch.setattr(requests.Session, "request", invalid_url_request)
+        testdir.makepyfile(
+            """
+            import pytest
+
+            @pytest.mark.jira("ORG-1382", run=True)
+            def test_pass():
+                assert True
+            """
+        )
+        result = testdir.runpytest(
+            "--jira",
+            "--jira-url",
+            url,
+            "--jira-token",
+            SECRET_TOKEN,
+            "-rs",
+        )
+        output = result.stdout.str() + result.stderr.str()
+        _assert_no_secret_leaked(output)
+        # the url-bearing message really was the one reported
+        assert "Invalid URL" in output, output
+        assert result.ret != 0, output
 
 
 def assert_outcomes(

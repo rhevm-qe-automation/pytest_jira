@@ -395,8 +395,9 @@ Notes:
 * ``--jira-no-ssl-verify`` is ignored for a service account: its access
   token is only ever sent over verified TLS (a warning says so).
 * A failed mint stops the run with the HTTP status and which value to check
-  when the token endpoint answers, or with the transport error and no status
-  when it cannot be reached at all, under the default
+  when the token endpoint answers, with the transport error and no status
+  when it cannot be reached at all, and with an unexpected response and no
+  status when it answers ``200`` with an unusable body, under the default
   ``error_strategy=strict``. With ``skip`` the marked tests
   are skipped with the connection message, with ``ignore`` no skip is added
   and they run; either way the reason is printed once on stderr. The client
@@ -463,7 +464,9 @@ test skips:
 
 * a mint failure ends the run with exit code 4 under ``strict``: with the HTTP
   status and which value to check when the token endpoint answers, with the
-  transport error and no status when it cannot be reached at all,
+  transport error and no status when it cannot be reached at all, with an
+  unexpected response and no status when it answers ``200`` with an unusable
+  body,
 * credentials rejected by Jira - a ``401`` that carries a response - end the
   run with exit code 4 and the auth hint under ``strict``. This covers the
   authentication probe (``/rest/api/2/myself``) and a ``401`` on a single
